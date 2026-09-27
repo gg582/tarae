@@ -1,0 +1,553 @@
+# Language table — name (= query directory queries/<name>/), grammar (= grammars/<grammar>.so, defaults to the name),
+# extensions, exact file names, path suffixes (path-suffixes — narrow common names by path), path patterns (globs — one `*` per segment). Grammars and queries themselves are looked up in the runtime directory (runtime.rs).
+# Names match the directory names of the queries (runtime/queries, taken from Helix).
+
+[[language]]
+name = "rust"
+extensions = ["rs"]
+
+[[language]]
+name = "python"
+extensions = ["py", "pyi", "pyw"]
+
+[[language]]
+name = "go"
+extensions = ["go"]
+
+[[language]]
+name = "gomod"
+filenames = ["go.mod"]
+
+[[language]]
+name = "javascript"
+extensions = ["js", "mjs", "cjs"]
+
+[[language]]
+name = "jsx"
+grammar = "javascript"
+extensions = ["jsx"]
+
+[[language]]
+name = "typescript"
+extensions = ["ts", "mts", "cts"]
+
+[[language]]
+name = "tsx"
+extensions = ["tsx"]
+
+[[language]]
+name = "json"
+extensions = ["json", "jsonc", "json5"]
+filenames = ["flake.lock", ".prettierrc", ".babelrc"]
+
+[[language]]
+name = "toml"
+extensions = ["toml"]
+filenames = ["Cargo.lock", "uv.lock"]
+
+# Helm chart templates — grammar is Go template, text between `{{ }}` is injected as YAML (queries/helm/injections.scm)
+[[language]]
+name = "helm"
+grammar = "gotmpl"
+globs = ["templates/*.yaml", "templates/*.yml", "templates/_*.tpl", "templates/NOTES.txt"]
+
+[[language]]
+name = "gotmpl"
+extensions = ["gotmpl"]
+
+[[language]]
+name = "yaml"
+extensions = ["yml", "yaml"]
+
+[[language]]
+name = "markdown"
+extensions = ["md", "markdown"]
+
+# Injection only (no extension) — bold·code·links inside markdown paragraphs, TODO·NOTE inside comments
+[[language]]
+name = "markdown.inline"
+grammar = "markdown_inline"
+
+[[language]]
+name = "comment"
+
+[[language]]
+name = "c"
+extensions = ["c", "h"]
+
+[[language]]
+name = "cpp"
+extensions = ["cc", "cpp", "cxx", "hpp", "hh", "hxx", "c++"]
+
+[[language]]
+name = "c-sharp"
+extensions = ["cs"]
+
+[[language]]
+name = "bash"
+extensions = ["sh", "bash", "zsh"]
+filenames = [".bashrc", ".bash_profile", ".zshrc", ".zprofile", ".profile", "PKGBUILD"]
+
+[[language]]
+name = "fish"
+extensions = ["fish"]
+
+[[language]]
+name = "nu"
+extensions = ["nu"]
+
+[[language]]
+name = "lua"
+extensions = ["lua"]
+
+[[language]]
+name = "html"
+extensions = ["html", "htm"]
+
+[[language]]
+name = "css"
+extensions = ["css"]
+
+[[language]]
+name = "scss"
+extensions = ["scss"]
+
+[[language]]
+name = "java"
+extensions = ["java"]
+
+[[language]]
+name = "kotlin"
+extensions = ["kt", "kts"]
+
+[[language]]
+name = "swift"
+extensions = ["swift"]
+
+[[language]]
+name = "zig"
+extensions = ["zig", "zon"]
+
+[[language]]
+name = "nix"
+extensions = ["nix"]
+
+[[language]]
+name = "dockerfile"
+extensions = ["dockerfile"]
+filenames = ["Dockerfile", "Containerfile"]
+
+[[language]]
+name = "make"
+extensions = ["mk"]
+filenames = ["Makefile", "makefile", "GNUmakefile"]
+
+[[language]]
+name = "cmake"
+extensions = ["cmake"]
+filenames = ["CMakeLists.txt"]
+
+[[language]]
+name = "just"
+extensions = ["just"]
+filenames = ["justfile", "Justfile", ".justfile"]
+
+[[language]]
+name = "sql"
+extensions = ["sql"]
+
+[[language]]
+name = "ruby"
+extensions = ["rb"]
+filenames = ["Gemfile", "Rakefile"]
+
+[[language]]
+name = "php"
+extensions = ["php"]
+
+[[language]]
+name = "elixir"
+extensions = ["ex", "exs"]
+
+[[language]]
+name = "haskell"
+extensions = ["hs"]
+
+[[language]]
+name = "ocaml"
+extensions = ["ml"]
+
+[[language]]
+name = "scala"
+extensions = ["scala", "sc"]
+
+[[language]]
+name = "dart"
+extensions = ["dart"]
+
+[[language]]
+name = "protobuf"
+grammar = "proto"
+extensions = ["proto"]
+
+[[language]]
+name = "graphql"
+extensions = ["graphql", "gql"]
+
+[[language]]
+name = "hcl"
+extensions = ["hcl", "tf", "tfvars"]
+
+[[language]]
+name = "kdl"
+extensions = ["kdl"]
+
+[[language]]
+name = "xml"
+extensions = ["xml", "svg", "plist"]
+
+[[language]]
+name = "svelte"
+extensions = ["svelte"]
+
+[[language]]
+name = "vue"
+extensions = ["vue"]
+
+[[language]]
+name = "ini"
+extensions = ["ini", "cfg"]
+
+[[language]]
+name = "diff"
+extensions = ["diff", "patch"]
+
+[[language]]
+name = "git-commit"
+grammar = "gitcommit"
+filenames = ["COMMIT_EDITMSG", "MERGE_MSG", "TAG_EDITMSG"]
+
+[[language]]
+name = "git-config"
+filenames = [".gitconfig", ".gitmodules"]
+
+[[language]]
+name = "git-ignore"
+grammar = "gitignore"
+filenames = [".gitignore", ".dockerignore", ".ignore"]
+
+[[language]]
+name = "sshclientconfig"
+path-suffixes = [".ssh/config"]
+
+# ── Grammar sources. Only `core = true` (what's used to hack on tarae itself — rust·toml·markdown·comment) goes into the default build.
+#    The rest: asked (y) on first opening a file, then `grammar.rs` fetches via git and builds with cc.
+#    `bundle = true` goes into the binary when built with `--features bundled-grammars` (source = runtime/grammars.tar.gz,
+#    packed at these commits by `cargo xtask vendor-grammars` — core is a subset of bundle).
+# Commits must match the queries (runtime/queries, taken from Helix 25.07.1) — when bumping, check the queries too.
+
+[[grammar]]
+name = "bash"
+bundle = true
+git = "https://github.com/tree-sitter/tree-sitter-bash"
+rev = "487734f87fd87118028a65a4599352fa99c9cde8"
+
+[[grammar]]
+name = "c"
+bundle = true
+git = "https://github.com/tree-sitter/tree-sitter-c"
+rev = "7175a6dd5fc1cee660dce6fe23f6043d75af424a"
+
+[[grammar]]
+name = "c-sharp"
+git = "https://github.com/tree-sitter/tree-sitter-c-sharp"
+rev = "b5eb5742f6a7e9438bee22ce8026d6b927be2cd7"
+
+[[grammar]]
+name = "cmake"
+git = "https://github.com/uyha/tree-sitter-cmake"
+rev = "6e51463ef3052dd3b328322c22172eda093727ad"
+
+[[grammar]]
+name = "comment"
+bundle = true
+core = true
+git = "https://github.com/stsewd/tree-sitter-comment"
+rev = "aefcc2813392eb6ffe509aa0fc8b4e9b57413ee1"
+
+[[grammar]]
+name = "cpp"
+git = "https://github.com/tree-sitter/tree-sitter-cpp"
+rev = "56455f4245baf4ea4e0881c5169de69d7edd5ae7"
+
+[[grammar]]
+name = "css"
+bundle = true
+git = "https://github.com/tree-sitter/tree-sitter-css"
+rev = "769203d0f9abe1a9a691ac2b9fe4bb4397a73c51"
+
+[[grammar]]
+name = "dart"
+git = "https://github.com/UserNobody14/tree-sitter-dart"
+rev = "e398400a0b785af3cf571f5a57eccab242f0cdf9"
+
+[[grammar]]
+name = "diff"
+bundle = true
+git = "https://github.com/the-mikedavis/tree-sitter-diff"
+rev = "fd74c78fa88a20085dbc7bbeaba066f4d1692b63"
+
+[[grammar]]
+name = "dockerfile"
+bundle = true
+git = "https://github.com/camdencheek/tree-sitter-dockerfile"
+rev = "087daa20438a6cc01fa5e6fe6906d77c869d19fe"
+
+[[grammar]]
+name = "elixir"
+git = "https://github.com/elixir-lang/tree-sitter-elixir"
+rev = "02a6f7fd4be28dd94ee4dd2ca19cb777053ea74e"
+
+[[grammar]]
+name = "fish"
+bundle = true
+git = "https://github.com/ram02z/tree-sitter-fish"
+rev = "a78aef9abc395c600c38a037ac779afc7e3cc9e0"
+
+[[grammar]]
+name = "git-config"
+git = "https://github.com/the-mikedavis/tree-sitter-git-config"
+rev = "9c2a1b7894e6d9eedfe99805b829b4ecd871375e"
+
+[[grammar]]
+name = "gitcommit"
+git = "https://github.com/gbprod/tree-sitter-gitcommit"
+rev = "a716678c0f00645fed1e6f1d0eb221481dbd6f6d"
+
+[[grammar]]
+name = "gitignore"
+bundle = true
+git = "https://github.com/shunsambongi/tree-sitter-gitignore"
+rev = "f4685bf11ac466dd278449bcfe5fd014e94aa504"
+
+[[grammar]]
+name = "go"
+bundle = true
+git = "https://github.com/tree-sitter/tree-sitter-go"
+rev = "64457ea6b73ef5422ed1687178d4545c3e91334a"
+
+[[grammar]]
+name = "gomod"
+bundle = true
+git = "https://github.com/camdencheek/tree-sitter-go-mod"
+rev = "6efb59652d30e0e9cd5f3b3a669afd6f1a926d3c"
+
+[[grammar]]
+name = "graphql"
+git = "https://github.com/bkegley/tree-sitter-graphql"
+rev = "5e66e961eee421786bdda8495ed1db045e06b5fe"
+
+[[grammar]]
+name = "haskell"
+git = "https://github.com/tree-sitter/tree-sitter-haskell"
+rev = "0975ef72fc3c47b530309ca93937d7d143523628"
+
+[[grammar]]
+name = "hcl"
+bundle = true
+git = "https://github.com/tree-sitter-grammars/tree-sitter-hcl"
+rev = "9e3ec9848f28d26845ba300fd73c740459b83e9b"
+
+[[grammar]]
+name = "html"
+bundle = true
+git = "https://github.com/tree-sitter/tree-sitter-html"
+rev = "cbb91a0ff3621245e890d1c50cc811bffb77a26b"
+
+[[grammar]]
+name = "ini"
+git = "https://github.com/justinmk/tree-sitter-ini"
+rev = "32b31863f222bf22eb43b07d4e9be8017e36fb31"
+
+[[grammar]]
+name = "java"
+bundle = true
+git = "https://github.com/tree-sitter/tree-sitter-java"
+rev = "09d650def6cdf7f479f4b78f595e9ef5b58ce31e"
+
+[[grammar]]
+name = "javascript"
+bundle = true
+git = "https://github.com/tree-sitter/tree-sitter-javascript"
+rev = "f772967f7b7bc7c28f845be2420a38472b16a8ee"
+
+[[grammar]]
+name = "json"
+bundle = true
+git = "https://github.com/tree-sitter/tree-sitter-json"
+rev = "73076754005a460947cafe8e03a8cf5fa4fa2938"
+
+[[grammar]]
+name = "just"
+bundle = true
+git = "https://github.com/poliorcetics/tree-sitter-just"
+rev = "8d03cfdd7ab89ff76d935827de1b93450fa0ec0a"
+
+[[grammar]]
+name = "kdl"
+git = "https://github.com/amaanq/tree-sitter-kdl"
+rev = "3ca569b9f9af43593c24f9e7a21f02f43a13bb88"
+
+[[grammar]]
+name = "kotlin"
+git = "https://github.com/fwcd/tree-sitter-kotlin"
+rev = "c4ddea359a7ff4d92360b2efcd6cfce5dc25afe6"
+
+[[grammar]]
+name = "lua"
+git = "https://github.com/tree-sitter-grammars/tree-sitter-lua"
+rev = "88e446476a1e97a8724dff7a23e2d709855077f2"
+
+[[grammar]]
+name = "make"
+bundle = true
+git = "https://github.com/alemuller/tree-sitter-make"
+rev = "a4b9187417d6be349ee5fd4b6e77b4172c6827dd"
+
+[[grammar]]
+name = "markdown"
+bundle = true
+core = true
+git = "https://github.com/tree-sitter-grammars/tree-sitter-markdown"
+rev = "62516e8c78380e3b51d5b55727995d2c511436d8"
+subpath = "tree-sitter-markdown"
+
+[[grammar]]
+name = "markdown_inline"
+bundle = true
+core = true
+git = "https://github.com/tree-sitter-grammars/tree-sitter-markdown"
+rev = "62516e8c78380e3b51d5b55727995d2c511436d8"
+subpath = "tree-sitter-markdown-inline"
+
+[[grammar]]
+name = "nix"
+git = "https://github.com/nix-community/tree-sitter-nix"
+rev = "1b69cf1fa92366eefbe6863c184e5d2ece5f187d"
+
+[[grammar]]
+name = "nu"
+git = "https://github.com/nushell/tree-sitter-nu"
+rev = "358c4f509eb97f0148bbd25ad36acc729819b9c1"
+
+[[grammar]]
+name = "ocaml"
+git = "https://github.com/tree-sitter/tree-sitter-ocaml"
+rev = "9965d208337d88bbf1a38ad0b0fe49e5f5ec9677"
+subpath = "ocaml"
+
+[[grammar]]
+name = "php"
+git = "https://github.com/tree-sitter/tree-sitter-php"
+rev = "f860e598194f4a71747f91789bf536b393ad4a56"
+
+[[grammar]]
+name = "proto"
+bundle = true
+git = "https://github.com/sdoerner/tree-sitter-proto"
+rev = "778ab6ed18a7fcf82c83805a87d63376c51e80bc"
+
+[[grammar]]
+name = "python"
+bundle = true
+git = "https://github.com/tree-sitter/tree-sitter-python"
+rev = "4bfdd9033a2225cc95032ce77066b7aeca9e2efc"
+
+[[grammar]]
+name = "ruby"
+git = "https://github.com/tree-sitter/tree-sitter-ruby"
+rev = "206c7077164372c596ffa8eaadb9435c28941364"
+
+[[grammar]]
+name = "rust"
+bundle = true
+core = true
+git = "https://github.com/tree-sitter/tree-sitter-rust"
+rev = "1f63b33efee17e833e0ea29266dd3d713e27e321"
+
+[[grammar]]
+name = "scala"
+git = "https://github.com/tree-sitter/tree-sitter-scala"
+rev = "7891815f42dca9ed6aeb464c2edc39d479ab965c"
+
+[[grammar]]
+name = "scss"
+git = "https://github.com/serenadeai/tree-sitter-scss"
+rev = "c478c6868648eff49eb04a4df90d703dc45b312a"
+
+[[grammar]]
+name = "sql"
+git = "https://github.com/DerekStride/tree-sitter-sql"
+rev = "b9d109588d5b5ed986c857464830c2f0bef53f18"
+
+[[grammar]]
+name = "sshclientconfig"
+git = "https://github.com/metio/tree-sitter-ssh-client-config"
+rev = "e45c6d5c71657344d4ecaf87dafae7736f776c57"
+
+[[grammar]]
+name = "svelte"
+git = "https://github.com/Himujjal/tree-sitter-svelte"
+rev = "60ea1d673a1a3eeeb597e098d9ada9ed0c79ef4b"
+
+[[grammar]]
+name = "swift"
+git = "https://github.com/alex-pinkus/tree-sitter-swift"
+rev = "57c1c6d6ffa1c44b330182d41717e6fe37430704"
+
+[[grammar]]
+name = "toml"
+bundle = true
+core = true
+git = "https://github.com/ikatyang/tree-sitter-toml"
+rev = "7cff70bbcbbc62001b465603ca1ea88edd668704"
+
+[[grammar]]
+name = "tsx"
+git = "https://github.com/tree-sitter/tree-sitter-typescript"
+rev = "b1bf4825d9eaa0f3bdeb1e52f099533328acfbdf"
+subpath = "tsx"
+
+[[grammar]]
+name = "typescript"
+git = "https://github.com/tree-sitter/tree-sitter-typescript"
+rev = "b1bf4825d9eaa0f3bdeb1e52f099533328acfbdf"
+subpath = "typescript"
+
+[[grammar]]
+name = "vue"
+git = "https://github.com/ikatyang/tree-sitter-vue"
+rev = "91fe2754796cd8fba5f229505a23fa08f3546c06"
+
+[[grammar]]
+name = "xml"
+bundle = true
+git = "https://github.com/RenjiSann/tree-sitter-xml"
+rev = "48a7c2b6fb9d515577e115e6788937e837815651"
+
+[[grammar]]
+name = "yaml"
+bundle = true
+git = "https://github.com/ikatyang/tree-sitter-yaml"
+rev = "0e36bed171768908f331ff7dff9d956bae016efb"
+
+[[grammar]]
+name = "zig"
+git = "https://github.com/tree-sitter-grammars/tree-sitter-zig"
+rev = "eb7d58c2dc4fbeea4745019dee8df013034ae66b"
+
+[[grammar]]
+name = "gotmpl"
+bundle = true
+git = "https://github.com/ngalaiko/tree-sitter-go-template"
+rev = "aa71f63de226c5592dfbfc1f29949522d7c95fac"

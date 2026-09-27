@@ -1,0 +1,6 @@
+These query files (highlights.scm, injections.scm, textobjects.scm) come from the Helix editor
+(https://github.com/helix-editor/helix, release 25.07.1, runtime/queries), licensed under the
+Mozilla Public License 2.0 (see LICENSE in this folder). Many are in turn derived from
+nvim-treesitter (Apache-2.0). tarae embeds them into its binary; changes are in this folder's git history.
+Exception: gotmpl/ and helm/ come from Helix master (2026-09) to match the tree-sitter-go-template
+grammar at ngalaiko/tree-sitter-go-template@aa71f63 (the repository Helix 25.07.1 pointed to is gone).

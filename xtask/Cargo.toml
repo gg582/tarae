@@ -1,0 +1,12 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "tarae dev tasks (cargo xtask …) — not part of the user binary"
+license = "MPL-2.0"
+
+[dependencies]
+flate2 = "1"
+tar = "0.4"
+toml = "1.1.6"

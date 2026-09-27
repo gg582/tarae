@@ -1,0 +1,118 @@
+# 한지 (hanji) — tarae's default light theme. Warm paper background + a single seal-vermilion accent.
+# Same skeleton as 먹 (meok) — keys are 1:1, so when you change one, change the other too.
+
+"ui.background" = { bg = "paper" }
+"ui.text" = "ink"
+"ui.text.focus" = { fg = "ink_hi", bold = true }
+"ui.text.directory" = "blue"
+"ui.accent" = "vermilion"
+"ui.selection" = { bg = "sel" }
+"ui.selection.primary" = { bg = "sel_hi" }
+"ui.cursor" = { fg = "paper", bg = "vermilion_dim" }
+"ui.cursor.primary" = { fg = "paper", bg = "vermilion" }
+"ui.cursor.primary.insert" = { fg = "paper", bg = "green" }
+"ui.cursor.primary.select" = { fg = "paper", bg = "plum" }
+"ui.cursor.match" = { bg = "surface_hi", bold = true }
+"ui.cursorline.primary" = { bg = "line" }
+"ui.linenr" = "faint"
+"ui.linenr.selected" = { fg = "vermilion", bold = true }
+"ui.statusline" = { fg = "ink", bg = "paper" }
+"ui.statusline.inactive" = { fg = "dim", bg = "paper" }
+"ui.statusline.normal" = { fg = "paper", bg = "vermilion", bold = true }
+"ui.statusline.insert" = { fg = "paper", bg = "green", bold = true }
+"ui.statusline.select" = { fg = "paper", bg = "plum", bold = true }
+"ui.bufferline" = { fg = "dim", bg = "paper" }
+"ui.bufferline.active" = { fg = "ink_hi", bg = "paper", bold = true }
+"ui.virtual" = "dim"
+"ui.virtual.whitespace" = "faint"
+"ui.virtual.inlay-hint" = { fg = "dim", italic = true }
+"ui.virtual.ruler" = { bg = "line" }
+"ui.virtual.indent-guide" = "guide"
+"ui.popup" = { fg = "ink", bg = "surface" }
+"ui.popup.info" = { fg = "ink", bg = "surface" }
+"ui.menu" = { fg = "ink", bg = "surface" }
+"ui.menu.selected" = { fg = "ink_hi", bg = "surface_hi" }
+"ui.help" = { fg = "ink", bg = "surface" }
+"ui.window" = "faint"
+
+"error" = "red"
+"warning" = "ochre"
+"info" = "blue"
+"hint" = "dim"
+"diagnostic.error" = { underline = { color = "red", style = "curl" } }
+"diagnostic.warning" = { underline = { color = "ochre", style = "curl" } }
+"diagnostic.info" = { underline = { color = "blue", style = "curl" } }
+"diagnostic.hint" = { underline = { color = "dim", style = "curl" } }
+"diagnostic.unnecessary" = { dim = true }
+"diagnostic.deprecated" = { crossed = true }
+"diff.plus" = "green"
+"diff.minus" = "red"
+"diff.delta" = "ochre"
+
+"comment" = { fg = "comment", italic = true }
+"keyword" = "plum"
+"keyword.control" = "plum"
+"keyword.operator" = "plum"
+"keyword.directive" = "teal"
+"function" = "blue"
+"function.builtin" = "blue"
+"function.macro" = "teal"
+"function.special" = "teal"
+"type" = "brown"
+"type.builtin" = "brown"
+"type.enum.variant" = "orange"
+"constructor" = "brown"
+"constant" = "orange"
+"constant.builtin" = "orange"
+"constant.numeric" = "orange"
+"constant.character" = "green"
+"constant.character.escape" = "teal"
+"string" = "green"
+"string.regexp" = "teal"
+"string.special" = "teal"
+"variable" = "ink"
+"variable.builtin" = { fg = "plum", italic = true }
+"variable.parameter" = "ink"
+"variable.other.member" = "ink"
+"attribute" = "brown"
+"namespace" = "ink"
+"label" = "teal"
+"tag" = "blue"
+"operator" = "punct"
+"punctuation" = "punct"
+"special" = "vermilion"
+
+"markup.heading" = { fg = "vermilion", bold = true }
+"markup.bold" = { bold = true }
+"markup.italic" = { italic = true }
+"markup.strikethrough" = { crossed = true }
+"markup.link.url" = { fg = "blue", underline = true }
+"markup.link.text" = "blue"
+"markup.raw" = "brown"
+"markup.list" = "vermilion"
+"markup.quote" = { fg = "dim", italic = true }
+
+[palette]
+paper = "#f5f1e8"
+line = "#efeadf"
+surface = "#ebe5d8"
+surface_hi = "#ded6c4"
+sel = "#e6dfcf"
+sel_hi = "#dcd2bd"
+faint = "#cbc4b4"
+guide = "#e4ddcd"
+dim = "#8d887c"
+comment = "#a39d90"
+punct = "#7d786d"
+ink = "#34322d"
+ink_hi = "#1d1c19"
+vermilion = "#c4452c"
+vermilion_dim = "#d99a88"
+brown = "#8a6414"
+plum = "#8a3f9c"
+blue = "#2c5d99"
+green = "#3f7a3a"
+orange = "#b4501f"
+teal = "#1f7d7d"
+red = "#b8322a"
+ochre = "#a8740e"

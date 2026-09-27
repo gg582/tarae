@@ -1,0 +1,119 @@
+# 먹 (meok) — tarae's default dark theme. Ink background + a single thread-coral accent.
+# Principle: use only one accent color, boldly. Syntax colors are desaturated so they don't compete; dimmed things
+# come in only three steps (dim·faint·surface). Format: see the header of theme.rs.
+
+"ui.background" = { bg = "ink" }
+"ui.text" = "paper"
+"ui.text.focus" = { fg = "paper_hi", bold = true }
+"ui.text.directory" = "sky"
+"ui.accent" = "coral"
+"ui.selection" = { bg = "sel" }
+"ui.selection.primary" = { bg = "sel_hi" }
+"ui.cursor" = { fg = "ink", bg = "coral_dim" }
+"ui.cursor.primary" = { fg = "ink", bg = "coral" }
+"ui.cursor.primary.insert" = { fg = "ink", bg = "sage" }
+"ui.cursor.primary.select" = { fg = "ink", bg = "lavender" }
+"ui.cursor.match" = { bg = "surface_hi", bold = true }
+"ui.cursorline.primary" = { bg = "line" }
+"ui.linenr" = "faint"
+"ui.linenr.selected" = { fg = "coral", bold = true }
+"ui.statusline" = { fg = "paper", bg = "ink" }
+"ui.statusline.inactive" = { fg = "dim", bg = "ink" }
+"ui.statusline.normal" = { fg = "ink", bg = "coral", bold = true }
+"ui.statusline.insert" = { fg = "ink", bg = "sage", bold = true }
+"ui.statusline.select" = { fg = "ink", bg = "lavender", bold = true }
+"ui.bufferline" = { fg = "dim", bg = "ink" }
+"ui.bufferline.active" = { fg = "paper_hi", bg = "ink", bold = true }
+"ui.virtual" = "dim"
+"ui.virtual.whitespace" = "faint"
+"ui.virtual.inlay-hint" = { fg = "dim", italic = true }
+"ui.virtual.ruler" = { bg = "line" }
+"ui.virtual.indent-guide" = "guide"
+"ui.popup" = { fg = "paper", bg = "surface" }
+"ui.popup.info" = { fg = "paper", bg = "surface" }
+"ui.menu" = { fg = "paper", bg = "surface" }
+"ui.menu.selected" = { fg = "paper_hi", bg = "surface_hi" }
+"ui.help" = { fg = "paper", bg = "surface" }
+"ui.window" = "faint"
+
+"error" = "rose"
+"warning" = "amber"
+"info" = "sky"
+"hint" = "dim"
+"diagnostic.error" = { underline = { color = "rose", style = "curl" } }
+"diagnostic.warning" = { underline = { color = "amber", style = "curl" } }
+"diagnostic.info" = { underline = { color = "sky", style = "curl" } }
+"diagnostic.hint" = { underline = { color = "dim", style = "curl" } }
+"diagnostic.unnecessary" = { dim = true }
+"diagnostic.deprecated" = { crossed = true }
+"diff.plus" = "sage"
+"diff.minus" = "rose"
+"diff.delta" = "amber"
+
+"comment" = { fg = "comment", italic = true }
+"keyword" = "lavender"
+"keyword.control" = "lavender"
+"keyword.operator" = "lavender"
+"keyword.directive" = "teal"
+"function" = "sky"
+"function.builtin" = "sky"
+"function.macro" = "teal"
+"function.special" = "teal"
+"type" = "sand"
+"type.builtin" = "sand"
+"type.enum.variant" = "peach"
+"constructor" = "sand"
+"constant" = "peach"
+"constant.builtin" = "peach"
+"constant.numeric" = "peach"
+"constant.character" = "sage"
+"constant.character.escape" = "teal"
+"string" = "sage"
+"string.regexp" = "teal"
+"string.special" = "teal"
+"variable" = "paper"
+"variable.builtin" = { fg = "lavender", italic = true }
+"variable.parameter" = "paper"
+"variable.other.member" = "paper"
+"attribute" = "sand"
+"namespace" = "paper"
+"label" = "teal"
+"tag" = "sky"
+"operator" = "punct"
+"punctuation" = "punct"
+"special" = "coral"
+
+"markup.heading" = { fg = "coral", bold = true }
+"markup.bold" = { bold = true }
+"markup.italic" = { italic = true }
+"markup.strikethrough" = { crossed = true }
+"markup.link.url" = { fg = "sky", underline = true }
+"markup.link.text" = "sky"
+"markup.raw" = "sand"
+"markup.list" = "coral"
+"markup.quote" = { fg = "dim", italic = true }
+
+[palette]
+ink = "#101217"
+line = "#15181e"
+surface = "#1a1d24"
+surface_hi = "#262a34"
+sel = "#232a38"
+sel_hi = "#2d3548"
+faint = "#3a3e49"
+guide = "#23262e"
+dim = "#747884"
+comment = "#5f6472"
+punct = "#8d909a"
+paper = "#d6d2c8"
+paper_hi = "#f1ede4"
+coral = "#ef8a5a"
+coral_dim = "#9a6048"
+sand = "#e2c27f"
+lavender = "#b39cf2"
+sky = "#7fb2ec"
+sage = "#9bcf8e"
+peach = "#ec9f76"
+teal = "#78c8c8"
+rose = "#ec7a86"
+amber = "#e3b660"

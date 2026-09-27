@@ -1,0 +1,22 @@
+# Example tarae config — put it at ~/.config/tarae/config.toml (full list: :config-show)
+
+theme = "meok"                 # meok · hanji · meok-transparent · hanji-transparent · default (follows the terminal background)
+
+[editor]
+color-modes = true
+cursorline = true
+line-numbers = "relative"
+
+[editor.cursor]
+insert = "bar"
+normal = "block"
+select = "underline"
+
+# Launch tools in zellij floating panes · switch between buffers
+[keys.normal]
+"A-," = "goto_previous_buffer"
+"A-." = "goto_next_buffer"
+"A-/" = "repeat_last_motion"
+A-w = ":buffer-close"
+C-k = ":sh zellij run -c -f --pinned true -x 1% -y 60% --width 98% --height 45% -- fish"
+C-l = ":sh zellij run -c -f -x 5% -y 5% --width 90% --height 95% -- lazygit"

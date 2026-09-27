@@ -1,0 +1,60 @@
+[package]
+name = "tarae"
+version = "0.1.0"
+edition = "2024"
+# let-chains (`if let … && let …`) stabilized in 1.88 — on an older rustc, `rustup update`
+rust-version = "1.88"
+license = "MPL-2.0"
+repository = "https://github.com/eth219/tarae"
+
+[dependencies]
+libc = "0.2"
+anyhow = "1.0.104"
+crossterm = "0.29.0"
+libloading = "0.9.0"
+nucleo-matcher = "0.3.1"
+regex = { version = "1.13.1", default-features = false, features = ["std", "perf", "unicode-perl", "unicode-case", "unicode-gencat", "unicode-script"] }  # size: without unicode-age·bool·segment (−150 KB)
+ropey = "1"
+serde_json = "1.0.151"
+streaming-iterator = "0.1.9"
+toml = "1.1.6"
+toml_edit = "0.25.15"
+tree-sitter = "0.27.0"
+tree-sitter-language = "0.1.8"
+unicode-segmentation = "1.13.3"
+unicode-width = "0.2.2"
+imara-diff = "0.1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Optimize dependencies (tree-sitter C·regex·ropey) even in debug builds — our own code keeps fast compiles.
+[profile.dev.package."*"]
+opt-level = 3
+
+# Tests at opt-level 1 — so the perf budget test (key → frame 16 ms) measures near-real cost rather than
+# debug-code cell loops (a frame is 7–9 ms at level 0, ~1 ms at level 1).
+[profile.test]
+opt-level = 1
+
+
+[features]
+# Embed more common grammars (`bundle = true` in languages.toml — C sources in runtime/grammars.tar.gz).
+# The default is only `core = true` (rust·toml·markdown·comment); others are offered for download on first open.
+# Where downloading isn't possible, build with:
+#   cargo install --path . --features bundled-grammars
+bundled-grammars = []
+
+[build-dependencies]
+# Unpack runtime/grammars.tar.gz (flate2·tar) and compile the selected grammars (languages.toml — toml) as C (cc)
+cc = "1"
+flate2 = "1"
+tar = "0.4"
+toml = "1.1.6"
+
+# Dev task crate (cargo xtask — .cargo/config.toml). Doesn't affect `cargo install --path .`
+[workspace]
+members = ["xtask"]
