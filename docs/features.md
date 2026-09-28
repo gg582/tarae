@@ -58,6 +58,10 @@ configs carry over as they are.
   records, `q` replays (with a count), `"xQ` records into a named register
 - Grapheme-cluster aware everywhere — movement, deletion, `r`, `f`, and drawing treat `é`, NFD Hangul, 👍🏽, 👨‍👩‍👧, and
   `\r\n` as one character; wide characters get the right width
+- **Soft wrap** `editor.soft-wrap` — long lines show as several rows, broken after a space (mid-word only when a word is
+  wider than the screen). Continuation rows are indented like the line, hang under a list marker (`- `, `1. `, `> `),
+  and have no line number; `j`/`k` and paging move by rows. `"prose"` (default) wraps Markdown, commit messages, and
+  plain text; `"always"` wraps code too (inlay hints then stay off lines that wrap); `"never"` scrolls sideways
 - Vertical movement remembers the visual column (tabs and wide characters included), so you come back to where you
   were after passing short lines
 

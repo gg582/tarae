@@ -50,6 +50,7 @@ mod theme;
 mod transaction;
 mod typed;
 mod undofile;
+mod wrap;
 mod ws;
 
 use std::path::PathBuf;

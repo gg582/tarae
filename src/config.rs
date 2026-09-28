@@ -56,6 +56,8 @@ pub struct EditorConfig {
     pub cursor_diagnostics: bool,
     /// Insert mode: an opener gets its closer (`pairs.rs`).
     pub auto_pairs: bool,
+    /// Long lines as several rows: "prose" (Markdown, commit messages, plain text) | "always" | "never".
+    pub soft_wrap: String,
     /// Auto-save: "off" | "focus" (when the terminal loses focus) | "idle" (+ after 2 s without input).
     pub auto_save: String,
     /// On save, record the undo history; restore it on reopen (`undofile.rs`).
@@ -91,6 +93,7 @@ impl Default for EditorConfig {
             inline_diagnostics: true,
             cursor_diagnostics: true,
             auto_pairs: true,
+            soft_wrap: "prose".into(),
             auto_save: "focus".into(),
             persistent_undo: true,
             agent_claude_code: true,

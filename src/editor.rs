@@ -132,8 +132,9 @@ impl Toast {
 /// Screen layout of the last frame (term.rs fills it on every draw).
 #[derive(Clone, Debug, Default)]
 pub struct Screen {
-    /// Per pane: (view, pane rect, line-number gutter width, screen row → doc line).
-    pub panes: Vec<(crate::split::ViewId, crate::split::Rect, usize, Vec<usize>)>,
+    /// Per pane: (view, pane rect, line-number gutter width, per screen row `ViewRow::origin`).
+    #[allow(clippy::type_complexity)]
+    pub panes: Vec<(crate::split::ViewId, crate::split::Rect, usize, Vec<(usize, usize, usize, usize)>)>,
     /// Column where the chat pane starts.
     pub chat_x: Option<usize>,
     /// First row and row count of the picker list.
@@ -708,6 +709,23 @@ impl Editor {
             .or_else(|| doc.path.as_deref().and_then(syntax::detect))
     }
 
+    /// Whether `doc`'s long lines wrap (`editor.soft-wrap`) — "prose" = Markdown, commit messages, and
+    /// files with no language.
+    pub fn wraps(&self, doc: &Document) -> bool {
+        match self.config.soft_wrap.as_str() {
+            "always" => true,
+            "never" => false,
+            _ => {
+                let lang = doc
+                    .syntax
+                    .as_ref()
+                    .map(|s| s.lang.name.as_str())
+                    .or_else(|| doc.path.as_deref().and_then(syntax::detect).map(|s| s.name.as_str()));
+                matches!(lang, None | Some("markdown" | "git-commit"))
+            }
+        }
+    }
+
     /// Insert-mode auto-pairs for this document — empty when turned off.
     pub fn pairs(&self) -> &'static [(char, char)] {
         if !self.config.auto_pairs {
@@ -847,8 +865,12 @@ impl Editor {
                 doc.set_selection(Selection::point(pos));
             }
             K::Down | K::Drag => {
-                let line = lines.get(row).copied().unwrap_or(doc.top + row).min(last);
-                let col = x.saturating_sub(rect.x + gutter) + doc.left;
+                let (line, c0, x0, end) =
+                    lines.get(row).copied().unwrap_or((doc.top + row, doc.left, 0, usize::MAX));
+                let line = line.min(last);
+                // A wrapped row: cells after its indent, never past its end (that's the next row's)
+                let col =
+                    (c0 + x.saturating_sub(rect.x + gutter).saturating_sub(x0)).min(end.saturating_sub(1));
                 let pos = mv::pos_at_col(&doc.text, line, col, tab);
                 let text = doc.text.clone();
                 let anchor = self.mouse_anchor;
@@ -2187,7 +2209,10 @@ mod tests {
         use crate::event::{Mouse, MouseKind as K};
         let mut ed = editor(&(0..30).map(|i| format!("line {i}\n")).collect::<String>());
         let rect = crate::split::Rect { x: 0, y: 1, w: 80, h: 10 };
-        ed.screen = Screen { panes: vec![(1, rect, 5, (0..10).collect())], ..Screen::default() };
+        ed.screen = Screen {
+            panes: vec![(1, rect, 5, (0..10).map(|l| (l, 0, 0, usize::MAX)).collect())],
+            ..Screen::default()
+        };
         let at = |kind, x, y| Mouse { kind, x, y, alt: false };
         // Screen (5+2, 3) = line 2, column 2
         ed.handle_mouse(at(K::Down, 7, 3));

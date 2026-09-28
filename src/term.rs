@@ -229,7 +229,7 @@ pub fn render(editor: &mut Editor, out: &mut impl Write, w: u16, h: u16) -> io::
     let mut screen_panes = Vec::new();
     for (id, r, pl, idx, top, left, focused) in panes(editor, &lay) {
         let view = build_view(editor, &editor.docs[idx], top, left, &pl);
-        screen_panes.push((id, r, pl.gutter, view.iter().map(|v| v.line()).collect()));
+        screen_panes.push((id, r, pl.gutter, view.iter().map(|v| v.origin(left)).collect()));
         if focused {
             editor.view = view;
         }
@@ -1001,10 +1001,43 @@ fn scroll_to_cursor(editor: &mut Editor, lay: &Layout) {
     let so = editor.config.scrolloff.min(lay.text_rows.saturating_sub(1) / 2);
     let tab = editor.config.tab_width;
     let mode = editor.mode;
+    let wrap_w = editor.wraps(editor.doc()).then_some(lay.text_cols);
     let doc = editor.doc_mut();
     let pos = cursor_idx(mode, doc.selection().primary(), &doc.text);
     let line = mv::line_of(&doc.text, pos);
-    if line < doc.top + so {
+    if let Some(w) = wrap_w {
+        // Screen rows, not lines: `so` rows kept above and below the cursor's row
+        let rows = |l: usize| crate::wrap::rows(&doc.text, l, w, tab);
+        let here = rows(line);
+        let k = crate::wrap::row_of(&here, pos);
+        let mut above = k; // rows between the top of the screen and the cursor's row
+        let mut top = line;
+        while top > 0 && above < so {
+            top -= 1;
+            above += rows(top).len();
+        }
+        if doc.top > top {
+            doc.top = top;
+        } else {
+            // Each line is at least a row — a top more than a screen above can't show the cursor
+            if line >= doc.top + lay.text_rows {
+                doc.top = line + 1 - lay.text_rows;
+            }
+            // Rows from the top through the cursor's, plus `so` below, must fit
+            let mut used: usize = (doc.top..line).map(|l| rows(l).len()).sum::<usize>() + k + 1;
+            while doc.top < line && used + so > lay.text_rows {
+                used -= rows(doc.top).len();
+                doc.top += 1;
+            }
+        }
+        // Wrapped lines never scroll sideways (a line too long to wrap still does)
+        if here.len() > 1
+            || mv::line_end(&doc.text, line) - mv::line_start(&doc.text, line) <= crate::wrap::MAX_LINE
+        {
+            doc.left = 0;
+            return;
+        }
+    } else if line < doc.top + so {
         doc.top = line.saturating_sub(so);
     } else if line + so >= doc.top + lay.text_rows {
         doc.top = line + so + 1 - lay.text_rows;
@@ -1368,6 +1401,7 @@ fn draw_text(
     let inlay_style = ui.base.patch(
         editor.theme.try_get("ui.virtual.inlay-hint").unwrap_or(Style { fg: ui.virt.fg, ..Style::default() }),
     );
+    let wrapping = editor.wraps(doc);
     let hints: &[crate::lsp::InlayHint] = if editor.config.inlay_hints && left == 0 {
         let h = &doc.lsp.inlay;
         &h[h.partition_point(|x| x.pos < vis_from)..h.partition_point(|x| x.pos <= vis_to)]
@@ -1522,7 +1556,16 @@ fn draw_text(
                 draw_folded_row(out, editor, ui, lay, *indent, spans, *code, focused && here)?;
                 continue;
             }
-            Some(crate::doccomment::ViewRow::Line(l)) => *l,
+            Some(crate::doccomment::ViewRow::Line(l)) => (*l, None),
+            Some(crate::doccomment::ViewRow::Part { line, row, index, last }) => {
+                (*line, Some((*row, *index, *last)))
+            }
+        };
+        let (line, part) = line;
+        // This row's slice of the line: display columns [row_left, row_end), drawn from screen x `x0`
+        let (row_left, row_end, x0, first, last) = match part {
+            Some((r, index, last)) => (r.col, r.end_col, r.x0, index == 0, last),
+            None => (left, usize::MAX, 0, true, true),
         };
         let li = line - top;
         let depth = depths.get(li).copied().unwrap_or(0);
@@ -1538,7 +1581,11 @@ fn draw_text(
             LineNumber::Relative if line != cur_line => line.abs_diff(cur_line),
             _ => line + 1,
         };
-        if signs > 0 {
+        if !first {
+            // Continuation row of a wrapped line: no sign or number
+            apply(out, ui.base)?;
+            queue!(out, Print(" ".repeat(lay.gutter - 1)))?;
+        } else if signs > 0 {
             // Sign column: stopped line ▶ > breakpoint ● > diagnostic bar
             let sev = line_severity.get(line.wrapping_sub(top)).copied().unwrap_or(0);
             if stop_line == Some(line) {
@@ -1560,10 +1607,13 @@ fn draw_text(
                 queue!(out, Print(if sev > 0 { "▎" } else { " " }))?;
             }
         }
-        apply(out, if focused && line == cur_line { ui.linenr_selected } else { ui.linenr })?;
-        queue!(out, Print(format!("{num:>w$}", w = lay.gutter - 1 - signs)))?;
-        // Between line number and text: git bar (added green · modified yellow · deleted red underline)
-        match git_marks.get(li).copied().flatten() {
+        if first {
+            apply(out, if focused && line == cur_line { ui.linenr_selected } else { ui.linenr })?;
+            queue!(out, Print(format!("{num:>w$}", w = lay.gutter - 1 - signs)))?;
+        }
+        // Between line number and text: git bar (added green · modified yellow · deleted red underline) —
+        // the bar runs down a wrapped line's rows, the underline goes under its last
+        match git_marks.get(li).copied().flatten().filter(|(g, _)| last || *g != "▁") {
             Some((glyph, st)) => {
                 apply(out, st)?;
                 queue!(out, Print(glyph))?;
@@ -1590,7 +1640,7 @@ fn draw_text(
         let start = mv::line_start(text, line);
         // Fetch only visible width + slack — so even a one-line giant file isn't copied whole every frame.
         let (sc, ec) = (text.byte_to_char(start), text.byte_to_char(mv::line_full_end(text, line)));
-        let end = text.char_to_byte(ec.min(sc + left + lay.text_cols + 256)); // cut at a char boundary
+        let end = text.char_to_byte(ec.min(sc + row_left + lay.text_cols + 256)); // cut at a char boundary
         let s = text.byte_slice(start..end).to_string();
         // Per-byte captures for this line chunk (outer painted first so inner/later patterns win)
         let mut paint: Vec<u32> = Vec::new();
@@ -1618,15 +1668,34 @@ fn draw_text(
         let mut line_hints = hints.iter().filter(|h| h.pos >= start && h.pos <= line_end).peekable();
         let mut shift = 0;
         let mut clipped = false;
+        // Wrapped: hints only where the whole line plus them fits one row (they'd push code off it)
+        let hint_room = match (wrapping, part) {
+            (false, _) => usize::MAX,
+            (true, Some(_)) => 0,
+            (true, None) => lay.text_cols.saturating_sub(mv::visual_col(text, line_end, tab)),
+        };
+        // Continuation row: its indent (with the line's guides)
+        if x0 > 0 {
+            for k in 0..x0 {
+                let guide = k > 0 && k < depth && k % unit == 0;
+                apply(out, if guide { line_base.patch(guide_at(k)) } else { line_base })?;
+                queue!(out, Print(if guide { "│" } else { " " }))?;
+            }
+            current = None;
+        }
         for c in graphemes::cells(&s, start, tab) {
             let g = &s[c.bytes.clone()];
+            if c.col >= row_end {
+                clipped = true; // the rest is the next row's
+                break;
+            }
             col = c.col + c.width;
-            if c.col < left {
+            if c.col < row_left {
                 // A wide char/tab cut by the scroll edge: blank its visible part so what follows lines up
-                if col > left {
+                if col > row_left {
                     apply(out, line_base)?;
                     current = Some(line_base);
-                    queue!(out, Print(" ".repeat((col - left).min(lay.text_cols))))?;
+                    queue!(out, Print(" ".repeat((col - row_left).min(lay.text_cols))))?;
                 }
                 continue;
             }
@@ -1634,14 +1703,17 @@ fn draw_text(
                 continue;
             }
             while let Some(h) = line_hints.next_if(|h| h.pos <= c.pos) {
-                let room = lay.text_cols.saturating_sub(c.col - left + shift);
+                let room = lay
+                    .text_cols
+                    .saturating_sub(c.col - row_left + shift)
+                    .min(hint_room.saturating_sub(shift));
                 let t = fit(&h.text, room);
                 apply(out, line_base.patch(Style { bg: None, ..inlay_style }))?;
                 current = None;
                 queue!(out, Print(&t))?;
                 shift += t.width();
             }
-            let x = c.col - left + shift;
+            let x = x0 + c.col - row_left + shift;
             if x + c.width > lay.text_cols {
                 clipped = true;
                 break;
@@ -1732,7 +1804,10 @@ fn draw_text(
         // Hints left at line end (a line without a newline, like the last one)
         if !clipped {
             for h in line_hints {
-                let room = lay.text_cols.saturating_sub(col.saturating_sub(left) + shift);
+                let room = lay
+                    .text_cols
+                    .saturating_sub(x0 + col.saturating_sub(row_left) + shift)
+                    .min(hint_room.saturating_sub(shift));
                 let t = fit(&h.text, room);
                 apply(out, line_base.patch(Style { bg: None, ..inlay_style }))?;
                 queue!(out, Print(&t))?;
@@ -1740,8 +1815,8 @@ fn draw_text(
             }
         }
         // Cursor at end of doc (EOF) — there's no corresponding char.
-        if primary == len && line == cur_line && cursor.is_none() && col >= left {
-            let x = col - left + shift;
+        if primary == len && line == cur_line && cursor.is_none() && col >= row_left && last {
+            let x = x0 + col - row_left + shift;
             if x < lay.text_cols {
                 cursor = Some(((lay.x0 + lay.gutter + x) as u16, y));
             }
@@ -1751,7 +1826,7 @@ fn draw_text(
         if let Some(vals) = inline_vals.get(&line)
             && !clipped
         {
-            let used = col.saturating_sub(left) + shift + 1;
+            let used = x0 + col.saturating_sub(row_left) + shift + 1;
             let mut room = lay.text_cols.saturating_sub(used + 3);
             if room > 6 {
                 apply(out, line_base)?;
@@ -1784,7 +1859,7 @@ fn draw_text(
             .filter(|b| b.condition.is_some() || b.log.is_some() || b.rejected.is_some())
             && !clipped
         {
-            let used = col.saturating_sub(left) + shift + 1 + extra_used;
+            let used = x0 + col.saturating_sub(row_left) + shift + 1 + extra_used;
             let mut room = lay.text_cols.saturating_sub(used + 3);
             if room >= 10 {
                 let mut parts: Vec<(&str, String)> = Vec::new();
@@ -1823,7 +1898,7 @@ fn draw_text(
         if let Some((sev, msg, more, whole)) = line_message_here
             && !clipped
         {
-            let used = col.saturating_sub(left) + shift + 1 + extra_used;
+            let used = x0 + col.saturating_sub(row_left) + shift + 1 + extra_used;
             let room = lay.text_cols.saturating_sub(used + 3);
             if room >= 8 {
                 let color = ui.sign[sev as usize].fg;
@@ -1885,12 +1960,41 @@ fn build_view(
         .as_ref()
         .map(|s| s.lang.name.as_str())
         .or_else(|| doc.path.as_deref().and_then(crate::syntax::detect).map(|s| s.name.as_str()));
+    // Soft wrap: a line → its rows (the top line taller than the screen shows from the cursor's part)
+    let wrap_w = editor.wraps(doc).then_some(lay.text_cols);
+    let tab = editor.config.tab_width;
+    let push_line = |view: &mut Vec<ViewRow>, line: usize| {
+        let Some(w) = wrap_w else { return view.push(ViewRow::Line(line)) };
+        let parts = crate::wrap::rows(text, line, w, tab);
+        if parts.len() == 1 {
+            return view.push(ViewRow::Line(line));
+        }
+        let skip = if line == top && line == cur_line {
+            let k = crate::wrap::row_of(&parts, doc.selection().primary().cursor(text));
+            (k + 1).saturating_sub(rows)
+        } else {
+            0
+        };
+        let n = parts.len();
+        for (index, row) in parts.into_iter().enumerate().skip(skip) {
+            if view.len() == rows {
+                break;
+            }
+            view.push(ViewRow::Part { line, row, index, last: index + 1 == n });
+        }
+    };
     if !editor.config.render_doc_comments
         || left > 0
         || editor.review.is_some()
         || !crate::doccomment::applies(lang)
     {
-        return (top..=max_line).take(rows).map(ViewRow::Line).collect();
+        let mut view = Vec::with_capacity(rows);
+        let mut line = top;
+        while view.len() < rows && line <= max_line {
+            push_line(&mut view, line);
+            line += 1;
+        }
+        return view;
     }
     // Find blocks: runs of consecutive doc-comment lines within [w0, w1]
     let (w0, w1) = (top.saturating_sub(200), (top + rows * 3 + 200).min(last));
@@ -1951,7 +2055,7 @@ fn build_view(
                 line = b + 1;
             }
             None => {
-                view.push(ViewRow::Line(line));
+                push_line(&mut view, line);
                 line += 1;
             }
         }
@@ -4977,6 +5081,7 @@ mod tests {
     #[test]
     fn wide_chars_at_scroll_edges() {
         let mut ed = Editor::new(Config::default());
+        ed.config.soft_wrap = "never".into(); // sideways scrolling
         ed.docs[0].text = Rope::from_str(&"漢".repeat(30));
         ed.docs[0].set_selection(crate::selection::Selection::point(29 * 3));
         let (w, h) = (21, 6); // gutter 4 → 17 text columns
@@ -4988,6 +5093,46 @@ mod tests {
         let row = rows.iter().find(|r| r.contains('漢')).unwrap();
         // 漢 at col 42 straddles left = 43 → one blank, then 漢 from col 44 at x = 1
         assert_eq!(row.trim_end(), format!("  1  {}", "漢".repeat(8)), "{rows:#?}");
+    }
+
+    /// Prose wraps at word boundaries with list items hanging; `j`/`k` go by rows; a click on a
+    /// continuation row lands in that row; a line taller than the screen shows the cursor's part.
+    #[test]
+    fn soft_wrap_rows_motion_and_clicks() {
+        let mut ed = Editor::new(Config::default());
+        let src = "- one two three four five six\nnext\n";
+        ed.docs[0].text = Rope::from_str(src);
+        let (w, h) = (20, 8); // gutter 4 → 16 text columns
+        let mut buf = Vec::new();
+        render(&mut ed, &mut buf, w, h).unwrap();
+        let rows = screen(&buf, w as usize, h as usize);
+        // Row 0 is the path bar; line numbers are relative
+        assert_eq!(rows[1].trim_end(), "  1 - one two three", "{rows:#?}");
+        assert_eq!(rows[2].trim_end(), "      four five six", "no number, hangs under the text");
+        assert_eq!(rows[3].trim_end(), "  1 next");
+        let head = |ed: &Editor| ed.doc().selection().primary().cursor(&ed.doc().text);
+        let key = |ed: &mut Editor, k: &str| {
+            ed.handle_key(k.parse().unwrap());
+            render(ed, &mut Vec::new(), w, h).unwrap();
+        };
+        key(&mut ed, "j");
+        assert_eq!(head(&ed), src.find("four").unwrap(), "down one row, same screen x");
+        key(&mut ed, "j");
+        assert_eq!(head(&ed), src.find("next").unwrap());
+        key(&mut ed, "k");
+        assert_eq!(head(&ed), src.find("four").unwrap());
+        let click =
+            crate::event::Mouse { kind: crate::event::MouseKind::Down, x: 4 + 2 + 5, y: 2, alt: false };
+        ed.handle_mouse(click);
+        assert_eq!(head(&ed), src.find("five").unwrap());
+        // One line taller than the screen: the rows around the cursor show
+        let long = "word ".repeat(60);
+        ed.docs[0].text = Rope::from_str(&long);
+        ed.docs[0].set_selection(crate::selection::Selection::point(long.len() - 3));
+        let mut buf = Vec::new();
+        render(&mut ed, &mut buf, w, h).unwrap();
+        assert!(String::from_utf8_lossy(&buf).contains("\x1b[?25h"), "cursor shown");
+        assert_eq!(ed.docs[0].left, 0, "never sideways");
     }
 
     #[test]

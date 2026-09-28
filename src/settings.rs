@@ -191,6 +191,13 @@ pub static SETTINGS: &[Setting] = &[
         set: |c, v| c.cursor_diagnostics = b(v),
     },
     Setting {
+        path: "editor.soft-wrap",
+        kind: Kind::Enum(&["prose", "always", "never"]),
+        doc: "Show long lines as several rows: in prose (Markdown, commit messages, plain text), always, or never",
+        get: |c| Value::from(c.soft_wrap.as_str()),
+        set: |c, v| c.soft_wrap = v.as_str().unwrap_or("prose").to_string(),
+    },
+    Setting {
         path: "editor.auto-pairs",
         kind: Kind::Bool,
         doc: "Typing ( [ { \" ' ` adds the closer; typing the closer steps over it; backspace removes both",

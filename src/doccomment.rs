@@ -126,6 +126,13 @@ pub fn parts(bodies: &[String]) -> Vec<Part> {
 #[derive(Clone, Debug)]
 pub enum ViewRow {
     Line(usize),
+    /// One screen row of a soft-wrapped line (`index` from 0; `last` = the row the line ends on).
+    Part {
+        line: usize,
+        row: crate::wrap::Row,
+        index: usize,
+        last: bool,
+    },
     Doc {
         /// Document line range of the block [start, end].
         start: usize,
@@ -143,15 +150,24 @@ impl ViewRow {
     /// Document line this screen row points to (first line if folded — clicking goes there and unfolds it).
     pub fn line(&self) -> usize {
         match self {
-            ViewRow::Line(l) => *l,
+            ViewRow::Line(l) | ViewRow::Part { line: l, .. } => *l,
             ViewRow::Doc { start, .. } => *start,
         }
     }
 
     pub fn last_line(&self) -> usize {
         match self {
-            ViewRow::Line(l) => *l,
+            ViewRow::Line(l) | ViewRow::Part { line: l, .. } => *l,
             ViewRow::Doc { end, .. } => *end,
+        }
+    }
+
+    /// For the mouse: (doc line, display column at the row's first text cell, cells before the text,
+    /// column the row stops before).
+    pub fn origin(&self, left: usize) -> (usize, usize, usize, usize) {
+        match self {
+            ViewRow::Part { line, row, .. } => (*line, row.col, row.x0, row.end_col),
+            _ => (self.line(), left, 0, usize::MAX),
         }
     }
 }

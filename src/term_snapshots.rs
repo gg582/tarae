@@ -500,6 +500,20 @@ fn diagnostic_card_shows_only_what_the_line_end_cannot() {
     assert!(snapshot(&s.ed, "card", &bytes, s.w, s.h).contains("  rustc"));
 }
 
+/// Soft wrap in prose: word-boundary rows, list items hanging under their text, continuation rows
+/// without numbers, the cursor line's band across all its rows.
+#[test]
+fn snapshot_soft_wrap() {
+    let mut s = Shot::new(60, 14);
+    s.file(
+        "notes.md",
+        "# Notes\n\nLong lines in prose wrap at word boundaries instead of running off the right edge.\n\n\
+         - A list item long enough to need a second row keeps its text aligned.\n- Short item\n",
+    );
+    s.keys("jj");
+    s.check("soft_wrap");
+}
+
 /// Start screen (no file).
 #[test]
 fn snapshot_welcome() {

@@ -354,12 +354,40 @@ fn move_line_down(cx: &mut Context) {
 // Visual line = screen line: no soft wrap, and a folded doc-comment block counts as one line
 // (passing through it in normal mode doesn't unfold it).
 fn move_visual_line_up(cx: &mut Context) {
-    move_line_up(cx);
+    let n = cx.count();
+    visual(cx, Direction::Backward, false, n);
     over_folded_docs(cx, false);
 }
 fn move_visual_line_down(cx: &mut Context) {
-    move_line_down(cx);
+    let n = cx.count();
+    visual(cx, Direction::Forward, false, n);
     over_folded_docs(cx, true);
+}
+
+/// Screen-row motion: over wrapped rows when this document soft-wraps (the sticky value is then the x
+/// within the row), else by lines.
+fn visual(cx: &mut Context, dir: Direction, extend: bool, n: usize) {
+    let width = cx.editor.viewport.1;
+    if !cx.editor.wraps(cx.editor.doc()) {
+        return vertical(cx, dir, extend, n);
+    }
+    let tab = cx.editor.config.tab_width;
+    let sticky = cx.editor.sticky.take();
+    let doc = cx.editor.doc_mut();
+    let ranges = doc.selection().ranges().to_vec();
+    let xs: Vec<usize> = match sticky {
+        Some(x) if x.len() == ranges.len() => x,
+        _ => ranges.iter().map(|&r| crate::wrap::x_of(&doc.text, r.cursor(&doc.text), width, tab)).collect(),
+    };
+    let moved = ranges
+        .iter()
+        .zip(&xs)
+        .map(|(&r, &x)| crate::wrap::move_rows(&doc.text, r, dir, n, extend, x, width, tab))
+        .collect();
+    let primary = doc.selection().primary_index();
+    doc.set_selection(Selection::new(moved, primary));
+    cx.editor.sticky = Some(xs);
+    cx.editor.sticky_used = true;
 }
 
 /// If the cursor landed inside a folded doc-comment block: moving up → the block's first line,
@@ -391,10 +419,12 @@ fn extend_line_down(cx: &mut Context) {
     vertical(cx, Direction::Forward, true, n)
 }
 fn extend_visual_line_up(cx: &mut Context) {
-    extend_line_up(cx)
+    let n = cx.count();
+    visual(cx, Direction::Backward, true, n)
 }
 fn extend_visual_line_down(cx: &mut Context) {
-    extend_line_down(cx)
+    let n = cx.count();
+    visual(cx, Direction::Forward, true, n)
 }
 
 fn word(cx: &mut Context, f: fn(&ropey::Rope, Range, usize, bool) -> Range, extend: bool) {
@@ -463,7 +493,7 @@ fn goto_line(cx: &mut Context) {
 fn scroll_move(cx: &mut Context, dir: Direction, divisor: usize) {
     let lines = (cx.editor.viewport.0 / divisor).max(1) * cx.count();
     let extend = is_select(cx);
-    vertical(cx, dir, extend, lines);
+    visual(cx, dir, extend, lines);
 }
 fn page_down(cx: &mut Context) {
     scroll_move(cx, Direction::Forward, 1)

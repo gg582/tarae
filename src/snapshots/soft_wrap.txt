@@ -1,0 +1,49 @@
+# soft_wrap · 60x14 · theme meok · cursor 3:4
+## text
+00  tarae  ›  notes.md
+01   2 # Notes
+02   1
+03   3 Long lines in prose wrap at word boundaries instead of
+04     running off the right edge.
+05   1
+06   2 - A list item long enough to need a second row keeps
+07       its text aligned.
+08   3 - Short item
+09
+10
+11
+12  ▐ NORMAL ▌                       markdown   utf-8 LF   3:1
+13
+## bg · surface per cell, blank = ui.background
+00
+01
+02
+03     Accccccccccccccccccccccccccccccccccccccccccccccccccccccc
+04     cccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+05
+06
+07
+08
+09
+10
+11
+12   AAAAAAAA
+13
+## fg · visible glyphs only, blank = unlisted color, UPPERCASE = bold
+00  ddddd  f  TTTTTTTT
+01   f A AAAAA
+02   f
+03   A
+04
+05   f
+06   f a
+07
+08   f a
+09
+10
+11
+12  a BBBBBB a                       dddddddd   ddddd dd   TTT
+13
+## legend
+bg: c=ui.cursorline.primary  A=ui.cursor.primary
+fg: a=ui.accent  t=ui.text.focus  d=ui.virtual  f=ui.linenr  B=bold
