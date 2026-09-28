@@ -4844,11 +4844,18 @@ mod tests {
         key + frame
     }
 
+    /// One frame at 60 Hz. `TARAE_PERF_SLACK` (a multiplier) loosens it on slow shared machines — CI sets 3,
+    /// which still catches an order-of-magnitude regression.
+    fn frame_budget() -> Duration {
+        let slack = std::env::var("TARAE_PERF_SLACK").ok().and_then(|s| s.parse::<u32>().ok()).unwrap_or(1);
+        Duration::from_millis(16) * slack.max(1)
+    }
+
     /// Performance budget: in a 200k-line file, key input → finished frame within one frame (16 ms, 60 Hz).
     /// Held even for debug builds — release is much faster.
     #[test]
     fn perf_budget_key_to_frame_on_large_file() {
-        const BUDGET: Duration = Duration::from_millis(16);
+        let budget = frame_budget();
         let text: String =
             (0..200_000).map(|i| format!("line {i} 타래 fn main() {{ let x = {i}; }}\n")).collect();
         let mut ed = Editor::new(Config::default());
@@ -4867,7 +4874,7 @@ mod tests {
                 worst = (dt, k);
             }
         }
-        assert!(worst.0 < BUDGET, "key {:?} took {:?} (budget {:?})", worst.1, worst.0, BUDGET);
+        assert!(worst.0 < budget, "key {:?} took {:?} (budget {:?})", worst.1, worst.0, budget);
         eprintln!("perf: worst key->frame {:?} on {:?}", worst.0, worst.1);
     }
 
@@ -4902,7 +4909,7 @@ mod tests {
     /// Same budget with syntax highlighting on — a big Rust file (only on machines with the grammar).
     #[test]
     fn perf_budget_with_syntax_highlighting() {
-        const BUDGET: Duration = Duration::from_millis(16);
+        let budget = frame_budget();
         let Ok(lang) = crate::syntax::Loader::global().load(crate::syntax::spec("rust").unwrap()) else {
             return;
         };
@@ -4928,7 +4935,7 @@ mod tests {
                 worst = (dt, k);
             }
         }
-        assert!(worst.0 < BUDGET, "key {:?} took {:?} (budget {:?})", worst.1, worst.0, BUDGET);
+        assert!(worst.0 < budget, "key {:?} took {:?} (budget {:?})", worst.1, worst.0, budget);
         eprintln!(
             "perf+syntax: worst key->frame {:?} on {:?} (full parse of 20k lines {full_parse:?}, off main thread)",
             worst.0, worst.1
