@@ -139,6 +139,8 @@ commands! {
         goto_prev_test => "Previous test",
         goto_next_paragraph => "Next paragraph",
         goto_prev_paragraph => "Previous paragraph",
+        goto_word => "Jump to a word by its label",
+        extend_to_word => "Extend selection to a labelled word",
         expand_selection => "Grow selection to the enclosing syntax node",
         shrink_selection => "Shrink selection back",
         select_next_sibling => "Select next syntax sibling",
@@ -923,6 +925,62 @@ fn textobject(cx: &mut Context, ch: char, kind: to::Kind) {
         };
         cx.editor.set_status(format!("m{ch}: {what}"));
     }
+}
+
+// ── Jump labels (body in labels.rs) ──────────────────────────────────────
+
+/// `gw` — two-letter labels on the words on screen; the next two keys pick one (select mode: extend).
+fn goto_word(cx: &mut Context) {
+    let extend = is_select(cx);
+    show_labels(cx, extend)
+}
+fn extend_to_word(cx: &mut Context) {
+    show_labels(cx, true)
+}
+fn show_labels(cx: &mut Context, extend: bool) {
+    use crate::doccomment::ViewRow;
+    let ed = &*cx.editor;
+    let doc = ed.doc();
+    let mut lines: Vec<usize> = ed
+        .view
+        .iter()
+        .filter_map(|v| match v {
+            ViewRow::Line(l) | ViewRow::Part { line: l, .. } => Some(*l),
+            ViewRow::Doc { .. } => None, // folded doc comments show other text
+        })
+        .collect();
+    lines.dedup();
+    let cols = if ed.wraps(doc) { (0, usize::MAX) } else { (doc.left, doc.left + ed.viewport.1) };
+    let cursor = doc.selection().primary().cursor(&doc.text);
+    let targets = crate::labels::targets(&doc.text, &lines, cursor, cols, ed.config.tab_width);
+    if targets.is_empty() {
+        return cx.editor.note("no words on screen to jump to");
+    }
+    cx.editor.jump_labels = Some(crate::labels::Labels { doc: doc.id, targets, typed: None, extend });
+    cx.editor.on_next_char = Some((label_first, None));
+}
+fn label_first(cx: &mut Context, c: char) {
+    match cx.editor.jump_labels.as_mut() {
+        Some(l) if l.starts(c) => {
+            l.typed = Some(c);
+            cx.editor.on_next_char = Some((label_second, None));
+        }
+        _ => cx.editor.jump_labels = None,
+    }
+}
+fn label_second(cx: &mut Context, c: char) {
+    let Some(l) = cx.editor.jump_labels.take() else { return };
+    let Some((start, end)) = l.typed.and_then(|a| l.find(a, c)) else { return };
+    cx.editor.push_jump();
+    let doc = cx.editor.doc_mut();
+    let sel = if l.extend {
+        doc.selection()
+            .clone()
+            .transform(|r| Range::new(r.anchor, if start >= r.anchor { end } else { start }))
+    } else {
+        Selection::single(Range::new(start, end))
+    };
+    doc.set_selection(sel);
 }
 
 // ── Syntax structure (body in structure.rs) ───────────────────────────────

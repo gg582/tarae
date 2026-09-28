@@ -161,6 +161,7 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `g p` | `goto_previous_buffer` | Goto previous buffer |
 | `g r` | `goto_reference` | Goto references (LSP) |
 | `g s` | `goto_first_nonwhitespace` | Goto first non-blank in line |
+| `g w` | `goto_word` | Jump to a word by its label |
 | `g y` | `goto_type_definition` | Goto type definition (LSP) |
 
 ### `m`

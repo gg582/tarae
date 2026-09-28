@@ -35,6 +35,8 @@ tarae keeps Helix's keys, command names, and selection model — `w` *selects* a
 configs carry over as they are.
 
 - Normal / insert / select modes, count prefixes (`3w`, `2gg`, `2x`), `:` command line
+- `gw` — two-letter labels on every word on screen (nearest first, the rest of the text dimmed); type one to select
+  that word (a jump; in select mode the selection grows to it)
 - Movement `h j k l` `w b e` `gg ge gh gl gs G` `C-f C-b C-d C-u` · character find `f t F T` · `A-.` repeats the last
   motion (including the character it looked for)
 - Selection `x`/`X` (whole lines, downward/upward), `A-x` (to line bounds), `%`, `;`, `A-;`, `,` · multiple cursors

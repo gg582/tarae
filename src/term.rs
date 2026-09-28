@@ -1433,6 +1433,30 @@ fn draw_text(
         _ => &[],
     };
     let primary_range = sel.primary();
+    // `gw` labels: label char per position (after the first key, only the matching labels' second char);
+    // the rest of the text steps back so they stand out
+    let mut label_cells: std::collections::HashMap<usize, char> = std::collections::HashMap::new();
+    let labels_on = match editor.jump_labels.as_ref().filter(|l| focused && l.doc == doc.id) {
+        Some(l) => {
+            for (i, &(s, _)) in l.targets.iter().enumerate() {
+                let (a, b) = crate::labels::Labels::label(i);
+                match l.typed {
+                    None => {
+                        label_cells.insert(s, a);
+                        label_cells.insert(graphemes::next_boundary(text, s), b);
+                    }
+                    Some(t) if t == a => {
+                        label_cells.insert(s, b);
+                    }
+                    Some(_) => {}
+                }
+            }
+            true
+        }
+        None => false,
+    };
+    let label_style =
+        Style { fg: ui.accent.fg, bg: blend(ui.accent.fg, ui.tint, 0.16), bold: true, ..Style::default() };
     // git: sign per visible line (glyph, color)
     let git_color = |k: &str| Style { fg: editor.theme.try_get(k).and_then(|s| s.fg), ..ui.base };
     let mut git_marks: Vec<Option<(&str, Style)>> = vec![None; span];
@@ -1553,7 +1577,7 @@ fn draw_text(
                     apply(out, ui.base)?;
                     queue!(out, Print(" "))?;
                 }
-                draw_folded_row(out, editor, ui, lay, *indent, spans, *code, focused && here)?;
+                draw_folded_row(out, editor, ui, lay, *indent, spans, *code, focused && here, labels_on)?;
                 continue;
             }
             Some(crate::doccomment::ViewRow::Line(l)) => (*l, None),
@@ -1771,6 +1795,15 @@ fn draw_text(
                 current = Some(gs);
                 queue!(out, Print("│"))?;
                 continue;
+            }
+            if labels_on {
+                if let Some(&ch) = label_cells.get(&c.pos) {
+                    apply(out, line_base.patch(label_style))?;
+                    current = None;
+                    queue!(out, Print(ch), Print(" ".repeat(c.width.saturating_sub(1))))?;
+                    continue;
+                }
+                st = Style { fg: ui.virt.fg, ..st };
             }
             if current != Some(st) {
                 apply(out, st)?;
@@ -2128,6 +2161,7 @@ fn draw_folded_row(
     spans: &[crate::markdown::Span],
     code: bool,
     current: bool,
+    dim: bool,
 ) -> io::Result<()> {
     let comment_fg = editor.theme.try_get("comment").and_then(|s| s.fg).or(ui.virt.fg);
     let panel_bg = blend(comment_fg, ui.tint, if current { 0.16 } else { 0.09 }).or(ui.base.bg);
@@ -2154,7 +2188,9 @@ fn draw_folded_row(
         if text.is_empty() {
             continue;
         }
-        apply(out, base.patch(Style { bg: None, ..sp.style }))?;
+        let st = base.patch(Style { bg: None, ..sp.style });
+        // `gw` labels up: step back like the rest of the text
+        apply(out, if dim { Style { fg: ui.virt.fg, ..st } } else { st })?;
         queue!(out, Print(&text))?;
         used += text.width();
     }
@@ -5141,6 +5177,34 @@ mod tests {
         render(&mut ed, &mut buf, w, h).unwrap();
         assert!(String::from_utf8_lossy(&buf).contains("\x1b[?25h"), "cursor shown");
         assert_eq!(ed.docs[0].left, 0, "never sideways");
+    }
+
+    /// `gw` puts two-letter labels on the words (nearest first); the first key narrows them to their second
+    /// letter, the second picks the word (a jump). Any other key cancels.
+    #[test]
+    fn gw_labels_pick_a_word() {
+        let mut ed = Editor::new(Config::default());
+        ed.docs[0].text = Rope::from_str("alpha beta gamma\n");
+        let (w, h) = (30, 6);
+        let key = |ed: &mut Editor, k: &str| {
+            ed.handle_key(k.parse().unwrap());
+            let mut buf = Vec::new();
+            render(ed, &mut buf, w, h).unwrap();
+            screen(&buf, w as usize, h as usize)[1].trim_end().to_string()
+        };
+        render(&mut ed, &mut Vec::new(), w, h).unwrap();
+        key(&mut ed, "g");
+        // After the cursor first: beta = aa, then alpha (the cursor's own word) = ab, gamma = ac
+        assert_eq!(key(&mut ed, "w"), "  1 abpha aata acmma", "labels cover the first two chars");
+        assert_eq!(key(&mut ed, "a"), "  1 blpha aeta camma", "only the second letters are left");
+        key(&mut ed, "c");
+        let r = ed.doc().selection().primary();
+        assert_eq!((r.from(), r.to()), (11, 16), "gamma selected");
+        assert!(ed.jump_labels.is_none());
+        key(&mut ed, "g");
+        key(&mut ed, "w");
+        assert_eq!(key(&mut ed, "esc"), "  1 alpha beta gamma", "cancelled");
+        assert_eq!(ed.doc().selection().primary(), r);
     }
 
     #[test]

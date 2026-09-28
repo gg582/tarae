@@ -23,6 +23,7 @@ mod java;
 mod jumplist;
 mod key;
 mod keymap;
+mod labels;
 mod llm;
 mod lsp;
 mod lsp_editor;

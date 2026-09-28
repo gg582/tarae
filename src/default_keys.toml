@@ -211,6 +211,7 @@ r = "surround_replace"
 d = "surround_delete"
 
 [normal.g]
+w = "goto_word"
 d = "goto_definition"
 D = "goto_declaration"
 y = "goto_type_definition"

@@ -196,6 +196,8 @@ pub struct Editor {
     pub(crate) repeating_insert: bool,
     /// `A-o` steps (doc, version, selection before, after) — `A-i` walks back while nothing else changed.
     pub(crate) expand_history: Vec<(DocId, u64, Selection, Selection)>,
+    /// `gw` labels on screen (labels.rs) — the next two keys pick one.
+    pub jump_labels: Option<crate::labels::Labels>,
     /// Length of the key sequence behind the last command — to drop `Q` itself when recording stops.
     pub last_trigger_len: usize,
     /// Some while entering a command line.
@@ -386,6 +388,7 @@ impl Editor {
             last_insert: None,
             repeating_insert: false,
             expand_history: Vec::new(),
+            jump_labels: None,
             next_id: 0,
         };
         ed.new_scratch();
@@ -1417,8 +1420,9 @@ impl Editor {
                 (Code::Tab, _) => Some('\t'),
                 _ => None,
             };
-            if let Some(ch) = ch {
-                self.with_group_count(count, |cx| f(cx, ch));
+            match ch {
+                Some(ch) => self.with_group_count(count, |cx| f(cx, ch)),
+                None => self.jump_labels = None, // a `gw` label cancelled
             }
             return;
         }
