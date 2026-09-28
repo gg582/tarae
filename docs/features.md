@@ -166,8 +166,10 @@ cursor or document moved on are dropped.
   you pick it, across files ([screenshot](screenshots/m3-code-action-preview.png))
 - `space r` rename across files · `:format` · server-sent edits, including creating, moving, and deleting files — one undo
   step per file
-- `gd` definition · `gr` references · `space k` hover — docs render as Markdown with code in its own colors
-  ([screenshot](screenshots/m3-hover.png))
+- `gd` definition · `gD` declaration · `gy` type definition · `gi` implementation · `gr` references · `space k` hover
+  — docs render as Markdown with code in its own colors ([screenshot](screenshots/m3-hover.png))
+- **Jump list** per pane — `C-o` back · `C-i`/Tab forward · `C-s` saves a spot. Go-tos, searches, `gg`/`ge` and
+  switching files record where you were, and a saved spot follows later edits · `ga` = the file shown before this one
 - **Symbols** — `space s` in this file, `space S` across the workspace, with kind glyphs in the same colors as code
   ([file](screenshots/ux-symbols.png) · [workspace](screenshots/ux-workspace-symbols.png))
 - Server progress (indexing and the like) shows in the status line

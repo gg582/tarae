@@ -444,6 +444,9 @@ impl Client {
                         "publishDiagnostics": { "relatedInformation": false },
                         "hover": { "contentFormat": ["plaintext", "markdown"] },
                         "definition": { "linkSupport": true },
+                        "declaration": { "linkSupport": true },
+                        "typeDefinition": { "linkSupport": true },
+                        "implementation": { "linkSupport": true },
                         "documentSymbol": { "hierarchicalDocumentSymbolSupport": true },
                         "references": {},
                         // Without this the server may send only Commands — rust-analyzer sends none at all.

@@ -47,14 +47,57 @@ pub enum ActionPreview {
     Failed(String),
 }
 
+/// Where `g d`·`g D`·`g y`·`g i`·`g r` go — one request shape, one reply handler.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Goto {
+    Definition,
+    Declaration,
+    TypeDefinition,
+    Implementation,
+    References,
+}
+
+impl Goto {
+    fn method(self) -> &'static str {
+        match self {
+            Goto::Definition => "textDocument/definition",
+            Goto::Declaration => "textDocument/declaration",
+            Goto::TypeDefinition => "textDocument/typeDefinition",
+            Goto::Implementation => "textDocument/implementation",
+            Goto::References => "textDocument/references",
+        }
+    }
+
+    /// Server capability to check first — only the ones servers often lack (every server does
+    /// definitions and references; some leave the capability out anyway).
+    fn provider(self) -> Option<&'static str> {
+        match self {
+            Goto::Declaration => Some("declarationProvider"),
+            Goto::TypeDefinition => Some("typeDefinitionProvider"),
+            Goto::Implementation => Some("implementationProvider"),
+            Goto::Definition | Goto::References => None,
+        }
+    }
+
+    /// Picker title / what "nothing found" names.
+    fn noun(self) -> &'static str {
+        match self {
+            Goto::Definition => "definitions",
+            Goto::Declaration => "declarations",
+            Goto::TypeDefinition => "type definitions",
+            Goto::Implementation => "implementations",
+            Goto::References => "references",
+        }
+    }
+}
+
 /// Inlay hints: ask once input has paused this long.
 const INLAY_DEBOUNCE_MS: u64 = 120;
 
 /// What a request was for — plus what's needed to use its reply.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
-    Definition,
-    References,
+    Goto(Goto),
     Hover,
     CodeAction,
     ResolveAction,
@@ -405,8 +448,7 @@ impl Editor {
     fn on_response(&mut self, cid: ClientId, p: Pending, result: &Value) {
         // Late response: drop if the doc changed (edit kinds) or the cursor moved (position kinds).
         let Some(doc) = self.docs.iter().find(|d| d.id == p.doc) else { return };
-        let cursor_bound =
-            matches!(p.kind, Kind::Definition | Kind::References | Kind::Hover | Kind::CodeAction);
+        let cursor_bound = matches!(p.kind, Kind::Goto(_) | Kind::Hover | Kind::CodeAction);
         let version_bound = !matches!(
             p.kind,
             Kind::ResolvePreview { .. }
@@ -506,21 +548,19 @@ impl Editor {
             }
             Kind::DocumentSymbols => self.on_document_symbols(p.doc, result),
             Kind::WorkspaceSymbols => self.on_workspace_symbols(result),
-            Kind::Definition | Kind::References => {
+            Kind::Goto(goto) => {
                 // jdtls: library/JDK classes come as jdt:// URIs — source into a read-only buffer (java.rs)
-                if p.kind == Kind::Definition
+                if goto != Goto::References
                     && let Some((uri, pos)) = crate::java::jdt_location(result)
                 {
+                    self.push_jump();
                     return self.open_class_file(cid, uri, pos);
                 }
                 let locs = lsp::locations(result);
                 match locs.as_slice() {
-                    [] => self.set_status(if p.kind == Kind::Definition {
-                        "no definition found"
-                    } else {
-                        "no references"
-                    }),
-                    [(path, pos)] if p.kind == Kind::Definition => self.lsp_jump(path, pos, enc),
+                    [] => self.set_status(format!("no {} found", goto.noun())),
+                    // One place: go straight there (references always list — even one is worth seeing)
+                    [(path, pos)] if goto != Goto::References => self.lsp_jump(path, pos, enc),
                     _ => {
                         let root = std::env::current_dir().unwrap_or_default();
                         let items = locs
@@ -538,8 +578,7 @@ impl Editor {
                                 }
                             })
                             .collect();
-                        let title = if p.kind == Kind::Definition { "definitions" } else { "references" };
-                        self.open_picker(Picker::new(title, items, true), None);
+                        self.open_picker(Picker::new(goto.noun(), items, true), None);
                     }
                 }
             }
@@ -1291,7 +1330,25 @@ impl Editor {
         );
     }
 
+    /// `g d`·`g D`·`g y`·`g i`·`g r` — asks only a server that says it can answer.
+    pub fn goto_location(&mut self, goto: Goto) {
+        let Some(cid) = self.ready_client() else { return };
+        let Some(c) = self.client(cid) else { return };
+        if let Some(cap) = goto.provider().map(|p| &c.caps[p])
+            && (cap.is_null() || *cap == json!(false))
+        {
+            let name = c.name.clone();
+            return self.set_status(format!("{name} can't find {}", goto.noun()));
+        }
+        let extra = match goto {
+            Goto::References => json!({ "context": { "includeDeclaration": true } }),
+            _ => json!({}),
+        };
+        self.lsp_request(Kind::Goto(goto), goto.method(), extra);
+    }
+
     fn lsp_jump(&mut self, path: &std::path::Path, pos: &Value, enc: Encoding) {
+        self.push_jump();
         if let Err(e) = self.open(path) {
             return self.set_error(format!("{e:#}"));
         }
@@ -1874,6 +1931,35 @@ mod tests {
         assert!(ed.signature.is_some());
         feed(&mut ed, "<esc>");
         assert!(ed.signature.is_none());
+        std::fs::remove_dir_all(file.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn goto_kinds_ask_their_method_and_check_the_server_can() {
+        let (mut ed, file, log) = setup("gotos", "trait T {}\nstruct S;\nimpl T for S {}\n");
+        let cid = ed.doc().lsp.client.unwrap();
+        let caps = json!({ "positionEncoding": "utf-8", "implementationProvider": true, "typeDefinitionProvider": {} });
+        ed.on_lsp_message(cid, json!({ "id": 0, "result": { "capabilities": caps } }));
+        // gD: the server didn't say it does declarations — nothing sent, the toast says why
+        feed(&mut ed, "6lgD");
+        assert!(ed.lsp.pending.is_empty());
+        assert!(ed.status.as_ref().is_some_and(|(m, _)| m.contains("declarations")), "{:?}", ed.status);
+        // gi: several → picker titled after the kind
+        feed(&mut ed, "gi");
+        assert!(sent(&log).contains(r#""method":"textDocument/implementation""#));
+        let at = |line: u64| json!({ "uri": lsp::uri(&file), "range": { "start": { "line": line, "character": 0 }, "end": { "line": line, "character": 1 } } });
+        let id = pending_of(&ed, Kind::Goto(Goto::Implementation));
+        ed.on_lsp_message(cid, json!({ "id": id, "result": [at(1), at(2)] }));
+        assert_eq!(ed.picker.as_ref().map(|p| p.title.as_str()), Some("implementations"));
+        feed(&mut ed, "<esc>");
+        // gy: one → straight there, and C-o comes back
+        feed(&mut ed, "gy");
+        assert!(sent(&log).contains(r#""method":"textDocument/typeDefinition""#));
+        let id = pending_of(&ed, Kind::Goto(Goto::TypeDefinition));
+        ed.on_lsp_message(cid, json!({ "id": id, "result": at(1) }));
+        assert_eq!(ed.doc().selection().primary(), Range::point(11));
+        feed(&mut ed, "<C-o>");
+        assert_eq!(ed.doc().selection().primary(), Range::point(6), "back on `T`");
         std::fs::remove_dir_all(file.parent().unwrap()).ok();
     }
 

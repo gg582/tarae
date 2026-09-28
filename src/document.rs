@@ -12,7 +12,7 @@ use anyhow::{Context as _, Result, bail};
 use ropey::Rope;
 
 use crate::lsp::{ClientId, Diagnostic};
-use crate::selection::Selection;
+use crate::selection::{Range, Selection};
 use crate::syntax::Syntax;
 use crate::transaction::{Assoc, Edit, Transaction};
 
@@ -89,6 +89,9 @@ pub struct Document {
     pub throwaway: bool,
     /// Address of non-file content (jdtls jdt:// class source) — reopening uses this buffer. Read-only.
     pub virtual_uri: Option<String>,
+    /// Spots the jump lists point at (id → selection) — they follow edits like diagnostics do.
+    marks: Vec<(u64, Selection)>,
+    next_mark: u64,
 }
 
 impl Document {
@@ -116,6 +119,8 @@ impl Document {
             title: None,
             throwaway: false,
             virtual_uri: None,
+            marks: Vec::new(),
+            next_mark: 0,
         }
     }
 
@@ -190,6 +195,9 @@ impl Document {
         for h in &mut self.lsp.inlay {
             h.pos = tx.map_pos(h.pos, Assoc::After);
         }
+        for (_, m) in &mut self.marks {
+            *m = tx.map_selection(m);
+        }
         self.set_selection(sel);
         self.next_version += 1;
         self.version = self.next_version;
@@ -197,6 +205,29 @@ impl Document {
 
     pub fn version(&self) -> u64 {
         self.version
+    }
+
+    /// Keep `sel` as a mark (it follows edits) — returns its id.
+    pub fn add_mark(&mut self, sel: Selection) -> u64 {
+        self.next_mark += 1;
+        self.marks.push((self.next_mark, sel));
+        self.next_mark
+    }
+
+    /// Mark `id` as stored (compare with the current selection).
+    pub fn mark_raw(&self, id: u64) -> Option<&Selection> {
+        self.marks.iter().find(|(m, _)| *m == id).map(|(_, s)| s)
+    }
+
+    /// Mark `id` on the current text (undo replaces the text wholesale — ends snap to a char start).
+    pub fn mark(&self, id: u64) -> Option<Selection> {
+        let snap = |p| crate::graphemes::snap(&self.text, p);
+        self.mark_raw(id).map(|s| s.transform(|r| Range::new(snap(r.anchor), snap(r.head))))
+    }
+
+    /// Drop marks nothing points at any more.
+    pub fn retain_marks(&mut self, keep: impl Fn(u64) -> bool) {
+        self.marks.retain(|(m, _)| keep(*m));
     }
 
     /// [error, warning] counts — for the status line.

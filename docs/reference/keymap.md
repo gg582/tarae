@@ -78,6 +78,9 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `C-b` | `page_up` | Move page up |
 | `C-d` | `half_page_down` | Move half page down |
 | `C-f` | `page_down` | Move page down |
+| `C-i` | `jump_forward` | Jump forward again |
+| `C-o` | `jump_backward` | Jump back to the previous spot |
+| `C-s` | `save_selection` | Save this spot to jump back to |
 | `C-u` | `half_page_up` | Move half page up |
 | `C-w` | … | More keys — see `C-w` below |
 | `down` | `move_visual_line_down` | Move down (visual line) |
@@ -94,6 +97,7 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `pageup` | `page_up` | Move page up |
 | `right` | `move_char_right` | Move right |
 | `space` | … | More keys — see `space` below |
+| `tab` | `jump_forward` | Jump forward again |
 | `up` | `move_visual_line_up` | Move up (visual line) |
 
 ### `[`
@@ -116,15 +120,19 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 
 | Key | Command | Description |
 |---|---|---|
+| `g a` | `goto_last_accessed_file` | Goto last accessed file |
 | `g d` | `goto_definition` | Goto definition (LSP) |
+| `g D` | `goto_declaration` | Goto declaration (LSP) |
 | `g e` | `goto_last_line` | Goto last line |
 | `g g` | `goto_file_start` | Go to file start (or line &lt;n>) |
 | `g h` | `goto_line_start` | Goto line start |
+| `g i` | `goto_implementation` | Goto implementation (LSP) |
 | `g l` | `goto_line_end` | Goto line end |
 | `g n` | `goto_next_buffer` | Goto next buffer |
 | `g p` | `goto_previous_buffer` | Goto previous buffer |
 | `g r` | `goto_reference` | Goto references (LSP) |
 | `g s` | `goto_first_nonwhitespace` | Goto first non-blank in line |
+| `g y` | `goto_type_definition` | Goto type definition (LSP) |
 
 ### `m`
 

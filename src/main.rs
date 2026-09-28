@@ -19,6 +19,7 @@ mod git;
 mod grammar;
 mod graphemes;
 mod java;
+mod jumplist;
 mod key;
 mod keymap;
 mod llm;

@@ -176,7 +176,14 @@ commands! {
         code_action => "Code actions",
         rename_symbol => "Rename symbol",
         goto_definition => "Goto definition (LSP)",
+        goto_declaration => "Goto declaration (LSP)",
+        goto_type_definition => "Goto type definition (LSP)",
+        goto_implementation => "Goto implementation (LSP)",
         goto_reference => "Goto references (LSP)",
+        goto_last_accessed_file => "Goto last accessed file",
+        jump_backward => "Jump back to the previous spot",
+        jump_forward => "Jump forward again",
+        save_selection => "Save this spot to jump back to",
         hover => "Show docs under cursor",
         completion => "Invoke completion popup (LSP)",
         goto_next_diag => "Goto next diagnostic",
@@ -403,13 +410,16 @@ fn goto_line_number(cx: &mut Context, line: usize) {
 }
 fn goto_file_start(cx: &mut Context) {
     let line = cx.count.map(|n| n.saturating_sub(1)).unwrap_or(0);
+    cx.editor.push_jump();
     goto_line_number(cx, line)
 }
 fn goto_last_line(cx: &mut Context) {
+    cx.editor.push_jump();
     goto_line_number(cx, usize::MAX)
 }
 fn goto_line(cx: &mut Context) {
     let line = cx.count.map(|n| n.saturating_sub(1)).unwrap_or(usize::MAX);
+    cx.editor.push_jump();
     goto_line_number(cx, line)
 }
 
@@ -1075,15 +1085,37 @@ fn rename_symbol(cx: &mut Context) {
     cx.editor.open_prompt(PromptKind::Rename, word.trim());
 }
 fn goto_definition(cx: &mut Context) {
-    cx.editor.lsp_request(
-        crate::lsp_editor::Kind::Definition,
-        "textDocument/definition",
-        serde_json::json!({}),
-    );
+    cx.editor.goto_location(crate::lsp_editor::Goto::Definition)
+}
+fn goto_declaration(cx: &mut Context) {
+    cx.editor.goto_location(crate::lsp_editor::Goto::Declaration)
+}
+fn goto_type_definition(cx: &mut Context) {
+    cx.editor.goto_location(crate::lsp_editor::Goto::TypeDefinition)
+}
+fn goto_implementation(cx: &mut Context) {
+    cx.editor.goto_location(crate::lsp_editor::Goto::Implementation)
 }
 fn goto_reference(cx: &mut Context) {
-    let extra = serde_json::json!({ "context": { "includeDeclaration": true } });
-    cx.editor.lsp_request(crate::lsp_editor::Kind::References, "textDocument/references", extra);
+    cx.editor.goto_location(crate::lsp_editor::Goto::References)
+}
+
+// ── Jump list (body in jumplist.rs) ──────────────────────────────────────
+
+fn jump_backward(cx: &mut Context) {
+    let n = cx.count();
+    cx.editor.jump_backward(n)
+}
+fn jump_forward(cx: &mut Context) {
+    let n = cx.count();
+    cx.editor.jump_forward(n)
+}
+fn save_selection(cx: &mut Context) {
+    cx.editor.push_jump();
+    cx.editor.note("saved to the jump list (C-o returns here)");
+}
+fn goto_last_accessed_file(cx: &mut Context) {
+    cx.editor.goto_last_accessed()
 }
 fn completion(cx: &mut Context) {
     cx.editor.completion_request();

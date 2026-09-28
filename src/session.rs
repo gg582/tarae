@@ -65,13 +65,7 @@ impl Editor {
         if doc.loading {
             return;
         }
-        let text = &doc.text;
-        let head = text.char_to_byte(text.byte_to_char(head.min(text.len_bytes())));
-        let head = if head < text.len_bytes() {
-            graphemes::prev_boundary(text, graphemes::next_boundary(text, head)) // start of its cluster
-        } else {
-            head
-        };
+        let head = graphemes::snap(&doc.text, head);
         doc.set_selection(Selection::point(head));
         doc.top = top.min(doc.text.len_lines().saturating_sub(1));
     }

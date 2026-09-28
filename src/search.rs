@@ -72,6 +72,7 @@ fn search_n(cx: &mut Context, pattern: &str, reverse: bool, count: usize) {
     cx.editor.search = Some(pattern.to_string());
     cx.editor.search_hl = true;
     let extend = cx.editor.mode == Mode::Select;
+    cx.editor.push_jump();
     let doc = cx.editor.doc_mut();
     let s = doc.text.to_string();
     let mut wrapped = false;

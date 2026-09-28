@@ -149,6 +149,15 @@ pub struct View {
     pub doc: DocId,
     pub top: usize,
     pub left: usize,
+    /// Spots to come back to (`C-o`/`C-i`) · the document shown before this one (`ga`).
+    pub jumps: crate::jumplist::JumpList,
+    pub last_doc: Option<DocId>,
+}
+
+impl View {
+    pub fn new(id: crate::split::ViewId, doc: DocId) -> Self {
+        Self { id, doc, top: 0, left: 0, jumps: Default::default(), last_doc: None }
+    }
 }
 
 pub struct Editor {
@@ -360,7 +369,7 @@ impl Editor {
             next_id: 0,
         };
         ed.new_scratch();
-        ed.views.push(View { id: 1, doc: ed.docs[0].id, top: 0, left: 0 });
+        ed.views.push(View::new(1, ed.docs[0].id));
         ed
     }
 
@@ -500,8 +509,12 @@ impl Editor {
             self.current = self.current.saturating_sub(1).min(self.docs.len() - 1);
         }
         let now = self.docs[self.current].id;
-        for v in self.views.iter_mut().filter(|v| v.doc == gone) {
-            (v.doc, v.top, v.left) = (now, 0, 0);
+        for v in self.views.iter_mut() {
+            if v.doc == gone {
+                (v.doc, v.top, v.left) = (now, 0, 0);
+            }
+            v.jumps.remove_doc(gone);
+            v.last_doc = v.last_doc.filter(|&d| d != gone);
         }
     }
 
@@ -514,6 +527,7 @@ impl Editor {
     /// Every event: focused pane = the current document and its scroll (even if the document changed by
     /// another path — opening a file, switching buffers).
     pub fn sync_focus_view(&mut self) {
+        self.track_doc_switch();
         let (doc, top, left) = {
             let d = self.doc();
             (d.id, d.top, d.left)
@@ -596,6 +610,7 @@ impl Editor {
     }
 
     pub fn goto_line(&mut self, line: usize) {
+        self.push_jump();
         let doc = self.doc_mut();
         let line = line.min(mv::last_line(&doc.text));
         let pos = mv::line_start(&doc.text, line);
@@ -988,14 +1003,17 @@ impl Editor {
                 .map(|_| {
                     self.set_success(format!("Theme {name} · saved to your config"));
                 }),
-            Action::Goto { path, line, col } => self.open(&path).map(|_| {
-                let doc = self.doc_mut();
-                let line = line.min(mv::last_line(&doc.text));
-                let (ls, le) = (mv::line_start(&doc.text, line), mv::line_end(&doc.text, line));
-                // If the byte column is mid-character (the file changed), snap to the char start
-                let pos = doc.text.char_to_byte(doc.text.byte_to_char((ls + col).min(le)));
-                doc.set_selection(Selection::point(pos));
-            }),
+            Action::Goto { path, line, col } => {
+                self.push_jump();
+                self.open(&path).map(|_| {
+                    let doc = self.doc_mut();
+                    let line = line.min(mv::last_line(&doc.text));
+                    let (ls, le) = (mv::line_start(&doc.text, line), mv::line_end(&doc.text, line));
+                    // If the byte column is mid-character (the file changed), snap to the char start
+                    let pos = doc.text.char_to_byte(doc.text.byte_to_char((ls + col).min(le)));
+                    doc.set_selection(Selection::point(pos));
+                })
+            }
         };
         if let Err(e) = result {
             self.set_error(format!("{e:#}"));
@@ -1218,6 +1236,7 @@ impl Editor {
         }
         let was_insert = self.mode == Mode::Insert;
         self.handle_key_inner(key);
+        self.track_doc_switch();
         let typed = key.plain_char();
         if was_insert || self.completion.is_some() {
             match key.code {
@@ -2363,6 +2382,9 @@ q = \"delete_selection\"\n",
             "gh",
             "ge",
             "gg",
+            "<C-o>",
+            "<tab>",
+            "<C-s>",
             "fa",
             "t한",
             "F,",
@@ -2554,6 +2576,61 @@ q = \"delete_selection\"\n",
         assert!(ed.docs.iter().all(|d| d.id != gone));
         assert!(ed.views.iter().all(|v| v.doc == id), "panes moved back to a.txt");
         assert_eq!(ed.doc().id, id);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// `C-o` returns from big moves (`ge`, `gg`, search) and `C-i`/Tab goes forward again; a spot
+    /// follows edits made after leaving it; `C-s` saves a spot by hand.
+    #[test]
+    fn jumplist_back_and_forth() {
+        let head = |ed: &Editor| ed.doc().selection().primary().cursor(&ed.doc().text);
+        let line = |ed: &Editor| ed.doc().text.byte_to_line(head(ed));
+        let ed = run("one\ntwo\nthree\nfour\n", "jge<C-o>");
+        assert_eq!(line(&ed), 1, "back where ge started");
+        let mut ed = run("one\ntwo\nthree\nfour\n", "jge<C-o><tab>");
+        assert_eq!(line(&ed), 3, "Tab = forward again");
+        feed(&mut ed, "<C-i>");
+        assert_eq!(line(&ed), 3, "nothing further ahead");
+        let ed = run("one\ntwo\nthree\nfour\n", "/fo<ret>/tw<ret><C-o><C-o>");
+        assert_eq!(line(&ed), 0, "two searches back");
+        // Lines added above the saved spot: it moves with its text
+        let ed = run("one\ntwo\nthree\n", "jjggOx<ret>y<esc><C-o>");
+        assert_eq!(ed.doc().text.line(line(&ed)).to_string(), "three\n");
+        let ed = run("one\ntwo\nthree\n", "j<C-s>jj<C-o>");
+        assert_eq!(line(&ed), 1, "C-s spot");
+        // A new jump after going back drops the forward branch
+        let ed = run("a\nb\nc\nd\n", "jgej<C-o>gg<tab>");
+        assert_eq!(line(&ed), 0, "nothing ahead of gg any more");
+    }
+
+    /// Switching files is a jump too (`C-o` returns to the previous file at its spot); `ga` toggles
+    /// between the last two files; closing a file drops its jumps.
+    #[test]
+    fn jumplist_across_files_and_last_accessed() {
+        let dir = std::env::temp_dir().join(format!("tarae-jumps-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (a, b) = (dir.join("a.txt"), dir.join("b.txt"));
+        std::fs::write(&a, "a1\na2\na3\n").unwrap();
+        std::fs::write(&b, "b1\nb2\n").unwrap();
+        let mut ed = editor("");
+        let name = |ed: &Editor| ed.doc().display_name_short();
+        feed(&mut ed, &format!(":o {}<ret>jj:o {}<ret>j", a.display(), b.display()));
+        assert_eq!(name(&ed), "b.txt");
+        feed(&mut ed, "<C-o>");
+        assert_eq!(name(&ed), "a.txt");
+        assert_eq!(ed.doc().text.byte_to_line(ed.doc().selection().primary().head), 2, "at its spot");
+        feed(&mut ed, "<tab>");
+        assert_eq!(name(&ed), "b.txt");
+        assert_eq!(ed.doc().text.byte_to_line(ed.doc().selection().primary().head), 1);
+        feed(&mut ed, "ga");
+        assert_eq!(name(&ed), "a.txt");
+        feed(&mut ed, "ga");
+        assert_eq!(name(&ed), "b.txt");
+        feed(&mut ed, ":bc<ret>");
+        assert_eq!(name(&ed), "a.txt");
+        assert!(ed.views[0].jumps.iter().all(|j| j.doc == ed.doc().id), "b's jumps went with it");
+        feed(&mut ed, "ga<C-o>");
+        assert_eq!(name(&ed), "a.txt");
         std::fs::remove_dir_all(&dir).ok();
     }
 

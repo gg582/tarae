@@ -32,6 +32,13 @@ pub fn next_boundary(text: &Rope, pos: usize) -> usize {
     }
 }
 
+/// Start of the cluster at byte `pos` (clamped to the text) — for positions kept across a wholesale text
+/// change (undo, reload), which may now fall mid-character.
+pub fn snap(text: &Rope, pos: usize) -> usize {
+    let pos = text.char_to_byte(text.byte_to_char(pos.min(text.len_bytes())));
+    if pos < text.len_bytes() { prev_boundary(text, next_boundary(text, pos)) } else { pos }
+}
+
 /// Previous cluster boundary before byte `pos` (0 if at the start).
 pub fn prev_boundary(text: &Rope, pos: usize) -> usize {
     let pos = pos.min(text.len_bytes());
