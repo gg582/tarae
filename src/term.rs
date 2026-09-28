@@ -3344,6 +3344,18 @@ fn draw_statusline(editor: &Editor, ui: &Ui, lay: &Layout, out: &mut impl Write)
         right.push(gap(100));
     }
     if let Some(s) = &doc.syntax {
+        // Language server at a glance: ◦ starting · ● connected (success color) · ● failed/exited (error color)
+        use crate::lsp_editor::LspDot;
+        if let Some((dot, _)) = editor.lsp_state() {
+            let ok = editor.theme.try_get("diff.plus").and_then(|s| s.fg).or(ui.accent.fg);
+            let (glyph, fg) = match dot {
+                LspDot::Starting => ("◦ ", ui.virt.fg),
+                LspDot::Ready => ("● ", ok),
+                LspDot::Failed => ("● ", ui.error.fg),
+                LspDot::Missing => ("◦ ", ui.linenr.fg),
+            };
+            right.push(Seg { text: glyph.to_string(), style: Style { fg, ..dim }, keep: 60 });
+        }
         right.push(Seg { text: s.lang.name.clone(), style: dim, keep: 60 });
         right.push(gap(60));
     }

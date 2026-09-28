@@ -205,6 +205,13 @@ pub static SETTINGS: &[Setting] = &[
         set: |c, v| c.format_on_save = b(v),
     },
     Setting {
+        path: "editor.git-blame",
+        kind: Kind::Bool,
+        doc: "Show who last changed the cursor line, when, and why at its end (space g b flips it)",
+        get: |c| Value::from(c.git_blame),
+        set: |c, v| c.git_blame = b(v),
+    },
+    Setting {
         path: "editor.auto-pairs",
         kind: Kind::Bool,
         doc: "Typing ( [ { \" ' ` adds the closer; typing the closer steps over it; backspace removes both",

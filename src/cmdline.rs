@@ -67,6 +67,7 @@ pub const COMMANDS: &[TypedCmd] = &[
     c(&["config-open"], Arg::None, "Open your config file"),
     c(&["config-reload"], Arg::None, "Reload your config file"),
     c(&["config-show"], Arg::None, "Show every setting with its value"),
+    c(&["log-open"], Arg::None, "Open tarae's log (language servers, errors)"),
     c(&["lsp-restart"], Arg::None, "Restart this file's language server"),
     c(&["lsp-stop"], Arg::None, "Stop this file's language server"),
     c(&["format", "fmt"], Arg::None, "Format the file (language server)"),

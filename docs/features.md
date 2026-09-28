@@ -90,8 +90,11 @@ configs carry over as they are.
   from the tree-sitter tree. With several buffers open, the list shows on the right. Turn it off with
   `editor.header = false`
 - **Status line** — mode pill (`▐ NORMAL ▌`, a color per mode) · git branch and `+3 −2` · Claude status (`…` waiting,
-  `● review` ready) · `● errors ▲ warnings` · language · encoding and line endings · selection count · position. When
-  the terminal is narrow, the least important items fold away first
+  `● review` ready) · `● errors ▲ warnings` · language, with its server's state in front — `◦` starting, green `●`
+  connected (a "ready" toast says so too), red `●` failed or exited, faint `◦` none installed · encoding and line
+  endings · selection count · position. When the terminal is narrow, the least important items fold away first
+- **Log** `:log-open` — what language servers print, when they start, get ready, or exit, what's missing from PATH, and
+  every message tarae showed, with local times (`$XDG_STATE_HOME/tarae/tarae.log`, the previous run's kept as `.old`)
 - **Toasts** — status messages fade in as cards at the top right, the left bar colored by kind (info, saved, warning,
   error). The more serious, the longer they stay. The command line is left for input, key hints, and the diagnostic at
   the cursor ([screenshot](screenshots/ux-toasts-sync.png))
@@ -145,7 +148,7 @@ configs carry over as they are.
   ([screenshot](screenshots/ux-git.png))
 - **`space g`** — `f` changed files (status letters in the gutter's colors) · `p` the change under the cursor as a
   card · `r` undo it (an ordinary undoable edit) · `s` stage just that change (what the buffer has, saved or not) ·
-  `b` blame at the cursor line's end — author, age, commit summary — on/off
+  `b` blame at the cursor line's end — author, age, commit summary — on by default (`editor.git-blame`), `b` flips it
 - **Large files** (≥ 1 MB) load in the background — a 100 MB file shows its first screen in 18 ms. Editing and saving
   wait until the file is fully read, so a half-loaded buffer can never overwrite it
 

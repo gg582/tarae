@@ -31,6 +31,7 @@ The name is also the `:set` path: `:set editor.scrolloff 8` changes it for this 
 | `editor.cursor-diagnostics` | bool | `true` | Cursor on an underlined problem whose message doesn't fit at the line end: show it in full in a card (Esc hides it) |
 | `editor.soft-wrap` | `"prose"` · `"always"` · `"never"` | `"prose"` | Show long lines as several rows: in prose (Markdown, commit messages, plain text), always, or never |
 | `editor.format-on-save` | bool | `true` | :w formats with the language server first (saves as is if it can't within 2 s) |
+| `editor.git-blame` | bool | `true` | Show who last changed the cursor line, when, and why at its end (space g b flips it) |
 | `editor.auto-pairs` | bool | `true` | Typing ( [ { " ' ` adds the closer; typing the closer steps over it; backspace removes both |
 | `editor.indent-guides` | bool | `true` | Faint vertical guides in leading indentation (theme: ui.virtual.indent-guide) |
 | `editor.scrollbar` | bool | `true` | Scrollbar on the right edge, with error/warning marks for the whole file |

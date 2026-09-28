@@ -189,10 +189,9 @@ fn git(dir: &Path, args: &[&str], input: Option<&str>) -> Result<String, String>
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// Blame state for the current document (`b` toggles it).
+/// Blame state for the current document (on/off is `editor.git-blame`).
 #[derive(Default)]
 pub struct BlameState {
-    pub on: bool,
     /// (doc, version) the lines are for · a run is going.
     pub of: Option<(crate::document::DocId, u64)>,
     pub lines: Vec<Option<Blame>>,
@@ -323,15 +322,15 @@ impl Editor {
 
     /// `space g b` — blame at the cursor line's end, on/off.
     pub fn git_toggle_blame(&mut self) {
-        self.blame.on = !self.blame.on;
+        self.config.git_blame = !self.config.git_blame;
         self.blame.of = None;
         self.blame.lines.clear();
-        self.note(if self.blame.on { "blame on (space g b hides it)" } else { "blame off" });
+        self.note(if self.config.git_blame { "blame on (space g b hides it)" } else { "blame off" });
     }
 
     /// Every event: blame the current document's text if it changed (shortly after input stops).
     pub fn blame_schedule(&mut self) {
-        if !self.blame.on || self.blame.running || !self.git_auto {
+        if !self.config.git_blame || self.blame.running || !self.git_auto {
             return;
         }
         let doc = self.doc();
@@ -359,7 +358,7 @@ impl Editor {
 
     /// The cursor line's blame, if showing.
     pub fn blame_here(&self, line: usize) -> Option<String> {
-        if !self.blame.on || self.blame.of.map(|o| o.0) != Some(self.doc().id) {
+        if !self.config.git_blame || self.blame.of.map(|o| o.0) != Some(self.doc().id) {
             return None;
         }
         let b = self.blame.lines.get(line)?.as_ref()?;

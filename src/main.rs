@@ -26,6 +26,7 @@ mod key;
 mod keymap;
 mod labels;
 mod llm;
+mod log;
 mod lsp;
 mod lsp_editor;
 mod markdown;

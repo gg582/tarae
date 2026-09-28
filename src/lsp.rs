@@ -6,7 +6,7 @@
 //! Asks for UTF-8 positions first — editor positions are bytes, no conversion. UTF-16-only servers also work.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Sender};
@@ -79,6 +79,11 @@ pub fn language_id(lang: &str) -> &str {
 
 /// Servers for this language: the configured list if any, else the first default candidate on PATH.
 pub fn find_server(lang: &str, config: &LspConfig) -> Option<ServerSpec> {
+    candidates(lang, config).into_iter().find(|s| on_path(&s.command))
+}
+
+/// The servers configured for `lang` (or the defaults), installed or not.
+pub fn candidates(lang: &str, config: &LspConfig) -> Vec<ServerSpec> {
     let names: Vec<&str> = match config.languages.get(lang) {
         Some(names) => names.iter().map(String::as_str).collect(),
         None => DEFAULTS
@@ -87,10 +92,7 @@ pub fn find_server(lang: &str, config: &LspConfig) -> Option<ServerSpec> {
             .map(|(_, list)| list.iter().map(|(name, ..)| *name).collect())
             .unwrap_or_default(),
     };
-    names
-        .into_iter()
-        .filter_map(|n| config.servers.get(n).cloned().or_else(|| default_spec(n)))
-        .find(|s| on_path(&s.command))
+    names.into_iter().filter_map(|n| config.servers.get(n).cloned().or_else(|| default_spec(n))).collect()
 }
 
 fn default_spec(name: &str) -> Option<ServerSpec> {
@@ -344,6 +346,8 @@ pub struct Client {
     /// Server capabilities (initialize response) — completion trigger characters etc.
     pub caps: Value,
     child: Child,
+    /// For the log: how long it took to be ready.
+    pub started: std::time::Instant,
 }
 
 impl Drop for Client {
@@ -395,11 +399,24 @@ impl Client {
             // stdout closed — the server exited (or crashed)
             let _ = events.send(Event::Job(Box::new(move |ed: &mut Editor| ed.lsp_exited(id))));
         });
-        // Read and discard stderr — otherwise the pipe fills up and the server stalls.
+        // stderr → the log (`:log-open`) — also keeps the pipe from filling up and stalling the server
+        let name = spec.name.clone();
         thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            while matches!(stderr.read(&mut buf), Ok(n) if n > 0) {}
+            let mut lines = BufReader::new(&mut stderr);
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match lines.read_line(&mut line) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => crate::log::line(&name, "stderr", &line),
+                }
+            }
         });
+        crate::log::line(
+            &spec.name,
+            "start",
+            &format!("{} {} (in {})", spec.command, spec.args.join(" "), root.display()),
+        );
         let client = Client {
             id,
             name: spec.name.clone(),
@@ -412,6 +429,7 @@ impl Client {
             progress: HashMap::new(),
             caps: Value::Null,
             child,
+            started: std::time::Instant::now(),
         };
         let root_uri = uri(root);
         let init = json!({

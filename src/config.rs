@@ -60,6 +60,8 @@ pub struct EditorConfig {
     pub soft_wrap: String,
     /// `:w` asks the language server to format first (lsp_editor.rs `format_then_save`).
     pub format_on_save: bool,
+    /// Blame at the cursor line's end (`space g b` flips it for the session).
+    pub git_blame: bool,
     /// Auto-save: "off" | "focus" (when the terminal loses focus) | "idle" (+ after 2 s without input).
     pub auto_save: String,
     /// On save, record the undo history; restore it on reopen (`undofile.rs`).
@@ -97,6 +99,7 @@ impl Default for EditorConfig {
             auto_pairs: true,
             soft_wrap: "prose".into(),
             format_on_save: true,
+            git_blame: true,
             auto_save: "focus".into(),
             persistent_undo: true,
             agent_claude_code: true,

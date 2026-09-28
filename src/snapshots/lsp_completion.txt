@@ -1,9 +1,9 @@
 # lsp_completion · 100x30 · theme meok · cursor 3:11
 ## text
 00  tarae  ›  src  ›  demo.rs ●  ›  ƒ main
-01    2 fn main() {
-02    1     let v = vec![3, 1, 2];
-03    3     v.
+01    2 fn main() {                                                                    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+02    1     let v = vec![3, 1, 2];                                                      ▎ fake ready
+03    3     v.                                                                         ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
 04    1 }  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
 05         ▎ƒ push          fn(&mut self, value: i32)     fn(&mut self, value: i32)
 06          ƒ pop        fn(&mut self) -> Option<i32>
@@ -28,13 +28,13 @@
 25
 26
 27
-28  ▐ INSERT ▌                                                                   rust   utf-8 LF   3:7
+28  ▐ INSERT ▌                                                                 ● rust   utf-8 LF   3:7
 29  tab select   enter accept   C-x complete   esc close
 ## bg · surface per cell, blank = ui.background
 00
 01
 02
-03      ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+03      ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc               c
 04
 05         PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPp ppppppppppppppppppppppppppppppppppppppppppppppp
 06         pppppppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppp
@@ -90,7 +90,7 @@
 25
 26
 27
-28  g BBBBBB g                                                                   dddd   ddddd dd   TTT
+28  g BBBBBB g                                                                 g dddd   ddddd dd   TTT
 29  DDD ffffff   DDDDD ffffff   DDD ffffffff   DDD fffff
 ## legend
 bg: c=ui.cursorline.primary  p=ui.popup  P=ui.menu.selected  i=ui.cursor.primary.insert

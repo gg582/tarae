@@ -671,6 +671,12 @@ impl Editor {
     }
 
     fn report(&mut self, kind: ToastKind, msg: String) {
+        let level = match kind {
+            ToastKind::Error => "error",
+            ToastKind::Warning => "warning",
+            _ => "info",
+        };
+        crate::log::line("tarae", level, &msg);
         self.toast(kind, msg.clone());
         let severity = if kind == ToastKind::Error { Severity::Error } else { Severity::Info };
         self.status = Some((msg, severity));
@@ -2132,7 +2138,7 @@ mod tests {
         settle_until(&mut ed, |ed| ed.doc().git_hunks.is_empty());
         let staged = String::from_utf8(git(&["diff", "--cached"])).unwrap();
         assert!(staged.contains("-two") && staged.contains("+TWO"), "{staged}");
-        feed(&mut ed, "ggOnew<esc> gb");
+        feed(&mut ed, "ggOnew<esc>"); // blame is on by default
         ed.blame_schedule(); // the event loop does this after every event
         settle_until(&mut ed, |ed| ed.blame.of.is_some_and(|(_, v)| v == ed.doc().version()));
         assert_eq!(ed.blame_here(0).as_deref(), Some("not committed yet"));

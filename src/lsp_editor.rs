@@ -34,6 +34,11 @@ pub struct LspState {
     completion_gen: u64,
     /// Go-to target in a file still loading in the background — applied once it has loaded.
     jump_after_load: Option<(DocId, Value, Encoding)>,
+    /// Servers that failed to start or exited, by name → why (the status line's red dot) · which server a
+    /// language uses · languages whose servers aren't installed (faint dot; logged once).
+    pub(crate) failed: HashMap<String, String>,
+    server_for: HashMap<String, String>,
+    missing: std::collections::HashSet<String>,
     /// Diagnostics for files that aren't open (`space D`): path → (severity, line, column, message).
     pub(crate) elsewhere: HashMap<std::path::PathBuf, Vec<(u8, usize, usize, String)>>,
 }
@@ -91,6 +96,16 @@ impl Goto {
             Goto::References => "references",
         }
     }
+}
+
+/// Language server state for the status line's dot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LspDot {
+    Starting,
+    Ready,
+    Failed,
+    /// Its language has servers, none installed.
+    Missing,
 }
 
 /// Inlay hints: ask once input has paused this long.
@@ -175,7 +190,20 @@ impl Editor {
         }
         let Some(path) = doc.path.clone() else { return };
         let Some(spec) = crate::syntax::detect(&path) else { return };
-        let Some(server) = lsp::find_server(&spec.name, &self.config.lsp) else { return };
+        let Some(server) = lsp::find_server(&spec.name, &self.config.lsp) else {
+            let tried: Vec<String> =
+                lsp::candidates(&spec.name, &self.config.lsp).into_iter().map(|s| s.command).collect();
+            if !tried.is_empty() && self.lsp.missing.insert(spec.name.clone()) {
+                let msg = format!(
+                    "no language server for {} — tried {} (not on PATH)",
+                    spec.name,
+                    tried.join(", ")
+                );
+                crate::log::line("tarae", "warning", &msg);
+            }
+            return;
+        };
+        self.lsp.server_for.insert(spec.name.clone(), server.name.clone());
         let root = lsp::find_root_for(&spec.name, &path);
         let cid = match self.lsp.clients.iter().find(|c| c.name == server.name && c.root == root) {
             Some(c) => c.id,
@@ -186,7 +214,9 @@ impl Editor {
                 match Client::start(cid, &server, &root, options, self.events.sender()) {
                     Ok(c) => self.lsp.clients.push(c),
                     Err(e) => {
-                        self.set_error(format!("lsp: {e}"));
+                        self.lsp.failed.insert(server.name.clone(), e.clone());
+                        crate::log::line(&server.name, "error", &format!("couldn't start: {e}"));
+                        self.set_error(format!("{} couldn't start: {e} · :log-open", server.name));
                         return;
                     }
                 }
@@ -279,11 +309,15 @@ impl Editor {
                 if id == 0 {
                     let Some(c) = self.client_mut(cid) else { return };
                     c.on_initialized(&msg["result"]);
+                    let (name, ms) = (c.name.clone(), c.started.elapsed().as_millis());
                     // Now the encoding is known — edits from here on carry UTF-16 columns if it needs them
                     let u16 = c.encoding == Encoding::Utf16;
                     for d in self.docs.iter_mut().filter(|d| d.lsp.client == Some(cid)) {
                         d.lsp.u16 = u16;
                     }
+                    crate::log::line(&name, "ready", &format!("after {ms} ms"));
+                    self.lsp.failed.remove(&name);
+                    self.set_success(format!("{name} ready"));
                     self.lsp_flush();
                     return;
                 }
@@ -436,6 +470,12 @@ impl Editor {
                     Some(title) => c.progress.insert(key, lsp::Progress { title, ..Default::default() }),
                     None => c.progress.remove(&key),
                 };
+            }
+            "window/logMessage" => {
+                let level = ["", "error", "warning", "info", "log"]
+                    [params["type"].as_u64().unwrap_or(4).clamp(1, 4) as usize];
+                let name = self.client(cid).map(|c| c.name.clone()).unwrap_or_default();
+                crate::log::line(&name, level, params["message"].as_str().unwrap_or_default());
             }
             "window/showMessage" => {
                 let m = params["message"].as_str().unwrap_or_default().to_string();
@@ -1617,8 +1657,24 @@ impl Editor {
     /// go without a server (reopening the file starts a new one).
     pub fn lsp_exited(&mut self, cid: ClientId) {
         if let Some(name) = self.lsp_stopped(cid) {
-            self.set_error(format!("lsp: {name} exited"));
+            crate::log::line(&name, "exit", "the server exited");
+            self.lsp.failed.insert(name.clone(), "exited".into());
+            self.set_error(format!("{name} exited · :log-open shows why"));
         }
+    }
+
+    /// The current file's language server as the status line shows it: (dot, server name) — None when its
+    /// language has no server configured.
+    pub fn lsp_state(&self) -> Option<(LspDot, String)> {
+        let doc = self.doc();
+        if let Some(c) = doc.lsp.client.and_then(|cid| self.client(cid)) {
+            return Some((if c.ready { LspDot::Ready } else { LspDot::Starting }, c.name.clone()));
+        }
+        let lang = &doc.path.as_deref().and_then(crate::syntax::detect)?.name;
+        if let Some(server) = self.lsp.server_for.get(lang) {
+            return self.lsp.failed.contains_key(server).then(|| (LspDot::Failed, server.clone()));
+        }
+        self.lsp.missing.contains(lang).then(|| (LspDot::Missing, lang.clone()))
     }
 
     /// Drop client `cid` (the process is killed) and everything that hung on it — its name, if it was there.
@@ -2265,6 +2321,37 @@ mod tests {
         feed(&mut ed, ":lsp-restart<ret>");
         let again = ed.doc().lsp.client.expect("attached again");
         assert!(again != first && ed.lsp.clients.len() == 1, "a new server");
+        std::fs::remove_dir_all(file.parent().unwrap()).ok();
+    }
+
+    /// A language whose server isn't installed: a faint dot, no toast (the log says what was tried).
+    #[test]
+    fn server_not_installed() {
+        let dir = std::env::temp_dir().join(format!("tarae-lsp-missing-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("main.rs");
+        std::fs::write(&file, "fn main() {}\n").unwrap();
+        let (config, w) = crate::config::parse(
+            "[lsp.broken]\ncommand = \"tarae-no-such-server\"\n[lang.rust]\nlsp = [\"broken\"]\n",
+        );
+        assert!(w.is_empty(), "{w:?}");
+        let mut ed = Editor::new(config);
+        ed.open(&file).unwrap();
+        assert_eq!(ed.lsp_state(), Some((LspDot::Missing, "rust".into())));
+        assert!(ed.status.is_none(), "no toast for it");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The status line's dot: starting until initialize answers, ready after, failed once it exits.
+    #[test]
+    fn lsp_state_dot() {
+        let (mut ed, file, _log) = setup("dot", "fn main() {}\n");
+        assert_eq!(ed.lsp_state().map(|s| s.0), Some(LspDot::Starting));
+        let cid = ready(&mut ed);
+        assert_eq!(ed.lsp_state(), Some((LspDot::Ready, "fake".into())));
+        ed.lsp_exited(cid);
+        assert_eq!(ed.lsp_state().map(|s| s.0), Some(LspDot::Failed));
+        assert!(ed.status.as_ref().is_some_and(|(m, _)| m.contains(":log-open")));
         std::fs::remove_dir_all(file.parent().unwrap()).ok();
     }
 

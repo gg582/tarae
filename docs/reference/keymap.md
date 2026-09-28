@@ -392,6 +392,7 @@ Type `:` in normal mode. `Tab` completes command names and their arguments (path
 | `:config-open` |  | Open your config file |
 | `:config-reload` |  | Reload your config file |
 | `:config-show` |  | Show every setting with its value |
+| `:log-open` |  | Open tarae's log (language servers, errors) |
 | `:lsp-restart` |  | Restart this file's language server |
 | `:lsp-stop` |  | Stop this file's language server |
 | `:format` | `:fmt` | Format the file (language server) |

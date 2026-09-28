@@ -135,6 +135,13 @@ pub fn execute(editor: &mut Editor, line: &str) -> Result<(), String> {
             });
             Ok(())
         }
+        "log-open" => {
+            let path = crate::log::path().ok_or("no state directory for the log")?;
+            if !path.exists() {
+                return Err("no log yet".into());
+            }
+            editor.open(&path).map_err(|e| format!("{e:#}"))
+        }
         "lsp-restart" => editor.lsp_restart(),
         "lsp-stop" => {
             let name = editor.lsp_stop()?;
