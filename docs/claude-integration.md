@@ -49,6 +49,13 @@ first time a version is sent, and just the area around the cursor for files over
 above your message (`main.rs · L13–18 · 3 diagnostics`). Answers render as Markdown, with code blocks in their
 language's colors.
 
+Claude isn't limited to that file: it **explores the project itself** with read-only tools (Read, Grep, Glob — it
+can't edit anything). Each lookup shows as a quiet row (`◦ read  src/lib.rs  L10–49`, `◦ search  fn add  in src`),
+the one in progress marked `●`. The other open files are listed in the context, and unsaved ones send their text,
+since Claude would otherwise read the stale copy on disk. Answers cite code as `path:line`. Those references are
+underlined, and a click opens them. `C-g` walks every place the conversation points at, newest first, centering
+each one while the chat keeps the keys.
+
 | Key | In the chat |
 |---|---|
 | `enter` | Send |
@@ -56,6 +63,7 @@ language's colors.
 | `C-c` | Stop the answer (the conversation stays) |
 | `C-r` | Replace the selection with the answer's code — through the same review |
 | `C-y` | Copy the code |
+| `C-g` | Go to where Claude looked or pointed (again = one further back) |
 | `C-l` | New conversation |
 | `esc` | Back to the editor |
 

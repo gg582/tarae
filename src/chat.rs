@@ -6,10 +6,16 @@
 //!   only the first time that version is sent (not resent every time), and only around the cursor if large.
 //! - Answers are drawn as they stream; stop (`C-c`) is an interrupt control request — process, memory stay.
 //! - A code block in the answer: `C-r` applies it to the selection (via the review diff), `C-y` copies it.
+//! - Claude explores the project itself with read-only tools (Read·Grep·Glob — it can't write). Each call
+//!   is one dim row (`◦ read  src/lib.rs  L10–49`); it and every `path:line` in an answer is a link —
+//!   click it, or `C-g` walks them newest first. Open files are listed in the context; unsaved ones carry
+//!   their text (disk is stale for them).
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Write;
+use std::ops::Range;
+use std::path::{Path, PathBuf};
 use std::process::ChildStdin;
 use std::time::Instant;
 
@@ -19,17 +25,29 @@ use crate::key::{Code, Key};
 use crate::llm::{self, StreamEv};
 use crate::markdown::Span;
 
-const SYSTEM: &str = "You are Claude, built into tarae — a terminal code editor. Each user message starts with \
-<editor-context>: the user's current file, cursor line, selection and diagnostics. Answer concisely in Markdown. \
-Put code in fenced blocks with a language tag. When the user asks to change the selection, reply with the complete \
-replacement for the selection in a single code block (the editor can apply it).";
+const SYSTEM: &str = "You are Claude, built into tarae — a terminal code editor, working in the user's project \
+(your current directory). Explore it with Read, Grep and Glob — look at the code you need across files instead of \
+guessing (you can't edit files). Each user message starts with <editor-context>: the file the user is looking at, \
+cursor line, selection, diagnostics and the other open files. Files marked unsaved differ from disk — trust the \
+text given in the context over what Read returns. When you point at code, cite it as path:line (relative to the \
+project root) — the user can jump there. Answer concisely in Markdown. Put code in fenced blocks with a language \
+tag. When the user asks to change the selection, reply with the complete replacement for the selection in a \
+single code block (the editor can apply it).";
+
+/// The tools the chat process gets — reading only.
+const TOOLS: &str = "Read,Grep,Glob";
 
 /// Example questions filled in with Tab in an empty chat.
-pub const SUGGESTIONS: [&str; 3] =
-    ["Explain what this file does", "Why is this diagnostic happening?", "Write tests for the selection"];
+pub const SUGGESTIONS: [&str; 3] = [
+    "Explain what this file does",
+    "Where is this used across the project?",
+    "Why is this diagnostic happening?",
+];
 
 /// Size limit for sending the whole file as context (beyond it, ±40 lines around the cursor).
 const WHOLE_FILE_MAX: usize = 60_000;
+/// Budget for the text of other unsaved buffers, per message.
+const UNSAVED_MAX: usize = 120_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
@@ -37,6 +55,28 @@ pub enum Role {
     Assistant,
     /// Dimmed notice (stopped·error·new chat).
     Note,
+    /// A tool Claude ran (`look` says what).
+    Tool,
+}
+
+/// Where a chat row points — a file Claude read or a `path:line` in an answer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Link {
+    pub path: PathBuf,
+    /// 0-based.
+    pub line: usize,
+}
+
+/// One tool call as a row: `◦ read  src/lib.rs  L10–49` · `◦ search  fn add  in src/`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Look {
+    pub verb: &'static str,
+    pub what: String,
+    /// Grep·Glob: the pattern is drawn like a string literal.
+    pub pattern: bool,
+    /// Dim suffix (line range · folder).
+    pub range: String,
+    pub link: Option<Link>,
 }
 
 pub struct Msg {
@@ -44,6 +84,8 @@ pub struct Msg {
     pub text: String,
     /// Context summary attached to a user message (`main.rs · L12–18 · 2 diagnostics`).
     pub chip: String,
+    /// `Role::Tool`: the call.
+    pub look: Option<Look>,
     /// Wrapped lines (text length, width, lines) — only changed messages are rewrapped, even while streaming.
     pub cache: RefCell<Rendered>,
 }
@@ -53,7 +95,11 @@ pub type Rendered = Option<(usize, usize, Vec<Vec<Span>>)>;
 
 impl Msg {
     fn new(role: Role, text: impl Into<String>, chip: impl Into<String>) -> Self {
-        Msg { role, text: text.into(), chip: chip.into(), cache: RefCell::new(None) }
+        Msg { role, text: text.into(), chip: chip.into(), look: None, cache: RefCell::new(None) }
+    }
+
+    fn tool(look: Look) -> Self {
+        Msg { look: Some(look), ..Msg::new(Role::Tool, "", "") }
     }
 }
 
@@ -85,6 +131,8 @@ pub struct Chat {
     /// Per document, the version whose full text was sent.
     sent: HashMap<DocId, u64>,
     stopping: bool,
+    /// `C-g`: how many links back from the newest the next press goes.
+    hop: usize,
 }
 
 impl Chat {
@@ -101,6 +149,7 @@ impl Chat {
             generation: 0,
             sent: HashMap::new(),
             stopping: false,
+            hop: 0,
         }
     }
 
@@ -125,6 +174,24 @@ impl Chat {
             }
         }
         blocks.pop()
+    }
+
+    /// Every place the conversation points at, oldest first (repeats in a row collapsed).
+    pub fn links(&self) -> Vec<Link> {
+        let mut out: Vec<Link> = Vec::new();
+        for m in &self.msgs {
+            let found: Vec<Link> = match m.role {
+                Role::Tool => m.look.iter().filter_map(|l| l.link.clone()).collect(),
+                Role::Assistant => refs_in(&m.text).into_iter().map(|(_, l)| l).collect(),
+                _ => Vec::new(),
+            };
+            for l in found {
+                if out.last() != Some(&l) {
+                    out.push(l);
+                }
+            }
+        }
+        out
     }
 
     fn kill(&mut self) {
@@ -173,6 +240,7 @@ fn ensure_proc(ed: &mut Editor) {
     if c.proc.is_some() {
         return;
     }
+    let cfg = llm::LlmConfig { args: llm::with_tools(&cfg.args, TOOLS), ..cfg };
     let mut child = match llm::spawn(&cfg, &["--append-system-prompt", SYSTEM]) {
         Ok(child) => child,
         Err(e) => {
@@ -200,6 +268,13 @@ fn on_event(ed: &mut Editor, generation: u64, ev: StreamEv) {
             }
             c.state = State::Thinking;
         }
+        StreamEv::Tool { name, input } => {
+            if c.state == State::Idle {
+                return;
+            }
+            c.state = State::Thinking;
+            c.msgs.push(Msg::tool(look(&name, &input)));
+        }
         StreamEv::Text(t) => {
             if c.state == State::Idle {
                 return;
@@ -216,7 +291,7 @@ fn on_event(ed: &mut Editor, generation: u64, ev: StreamEv) {
             match r {
                 // Answers with no streamed pieces (short answers, CLIs without partials) get the final text
                 Ok(text) => {
-                    if !c.msgs.last().is_some_and(|m| m.role == Role::Assistant) {
+                    if !text.is_empty() && !c.msgs.last().is_some_and(|m| m.role == Role::Assistant) {
                         c.msgs.push(Msg::new(Role::Assistant, text, ""));
                     }
                     c.msgs.push(Msg::new(Role::Note, format!("{secs:.1}s"), ""));
@@ -262,9 +337,8 @@ pub fn send(ed: &mut Editor) {
         c.msgs.push(Msg::new(Role::Note, format!("claude: {e} — press enter to retry"), ""));
         return;
     }
-    if let Some((id, v)) = sent {
-        c.sent.insert(id, v);
-    }
+    c.sent.extend(sent);
+    c.hop = 0;
     c.msgs.push(Msg::new(Role::User, question, chip));
     c.input.clear();
     c.cursor = 0;
@@ -284,8 +358,8 @@ pub fn stop(ed: &mut Editor) {
     }
 }
 
-/// Context to send + summary chip + (if the full text was sent) that document version.
-fn context(ed: &Editor) -> (String, String, Option<(DocId, u64)>) {
+/// Context to send + summary chip + the document versions whose full text went along.
+fn context(ed: &Editor) -> (String, String, Vec<(DocId, u64)>) {
     let doc = ed.doc();
     let text = &doc.text;
     let name = doc.display_name();
@@ -294,12 +368,16 @@ fn context(ed: &Editor) -> (String, String, Option<(DocId, u64)>) {
     let head = sel.cursor(text);
     let line = text.byte_to_line(head.min(text.len_bytes()));
     let mut ctx = format!(
-        "<editor-context>\nfile: {name}{}\ncursor: line {}\n",
+        "<editor-context>\nfile: {name}{}{}\ncursor: line {}\n",
         if lang.is_empty() { String::new() } else { format!(" ({lang})") },
+        if doc.is_modified() && doc.path.is_some() { " (unsaved)" } else { "" },
         line + 1
     );
     let mut chip = doc.display_name_short();
-    let mut sent = None;
+    let mut sent = Vec::new();
+    let was_sent = |d: &crate::document::Document| {
+        ed.chat.as_ref().and_then(|c| c.sent.get(&d.id)) == Some(&d.version())
+    };
     // Selection (only when more than one character is selected)
     if sel.to() > crate::graphemes::next_boundary(text, sel.from()) {
         let (l0, l1) =
@@ -317,11 +395,10 @@ fn context(ed: &Editor) -> (String, String, Option<(DocId, u64)>) {
         });
     }
     // File: if this version hasn't been sent yet, the full text (if small) or around the cursor
-    let already = ed.chat.as_ref().and_then(|c| c.sent.get(&doc.id)) == Some(&doc.version());
-    if !already {
+    if !was_sent(doc) {
         if text.len_bytes() <= WHOLE_FILE_MAX {
             ctx.push_str(&format!("<file-content>\n{text}</file-content>\n"));
-            sent = Some((doc.id, doc.version()));
+            sent.push((doc.id, doc.version()));
         } else {
             let (a, b) = (line.saturating_sub(40), (line + 40).min(text.len_lines().saturating_sub(1)));
             let (fa, fb) = (text.line_to_byte(a), text.line_to_byte(b + 1));
@@ -348,8 +425,133 @@ fn context(ed: &Editor) -> (String, String, Option<(DocId, u64)>) {
         ctx.push_str("</diagnostics>\n");
         chip.push_str(&format!(" · {} diagnostic{}", diags.len(), if diags.len() == 1 { "" } else { "s" }));
     }
+    // The other open files — Claude reads them itself, except unsaved text it can't see on disk
+    let others: Vec<_> =
+        ed.docs.iter().filter(|d| d.id != doc.id && d.path.is_some() && !d.loading).collect();
+    if !others.is_empty() {
+        ctx.push_str("<open-files>\n");
+        for d in others.iter().take(30) {
+            ctx.push_str(&d.display_name());
+            ctx.push_str(if d.is_modified() { " (unsaved)\n" } else { "\n" });
+        }
+        ctx.push_str("</open-files>\n");
+        let mut budget = UNSAVED_MAX;
+        for d in others.iter().filter(|d| d.is_modified() && !was_sent(d)) {
+            let n = d.text.len_bytes();
+            if n > budget.min(WHOLE_FILE_MAX) {
+                continue;
+            }
+            budget -= n;
+            ctx.push_str(&format!(
+                "<unsaved-file path=\"{}\">\n{}</unsaved-file>\n",
+                d.display_name(),
+                d.text
+            ));
+            sent.push((d.id, d.version()));
+        }
+    }
     ctx.push_str("</editor-context>");
     (ctx, chip, sent)
+}
+
+// ── Links ─────────────────────────────────────────────────────────────────
+
+/// A tool call → its row.
+fn look(name: &str, input: &serde_json::Value) -> Look {
+    let s = |k: &str| input[k].as_str().unwrap_or_default().to_string();
+    let n = |k: &str| input[k].as_u64().map(|v| v as usize);
+    let within =
+        |p: String| if p.is_empty() { String::new() } else { format!("in {}", shown(Path::new(&p))) };
+    match name {
+        "Read" => {
+            let path = resolve(&s("file_path"));
+            let range = match (n("offset"), n("limit")) {
+                (Some(o), Some(l)) => format!("L{}–{}", o.max(1), o.max(1) + l.max(1) - 1),
+                (Some(o), None) => format!("L{}–", o.max(1)),
+                _ => String::new(),
+            };
+            let line = n("offset").unwrap_or(1).saturating_sub(1);
+            Look { verb: "read", what: shown(&path), pattern: false, range, link: Some(Link { path, line }) }
+        }
+        "Grep" => {
+            let place = if input["glob"].is_string() { s("glob") } else { s("path") };
+            Look { verb: "search", what: s("pattern"), pattern: true, range: within(place), link: None }
+        }
+        "Glob" => {
+            Look { verb: "find", what: s("pattern"), pattern: true, range: within(s("path")), link: None }
+        }
+        other => {
+            Look { verb: "use", what: other.to_string(), pattern: false, range: String::new(), link: None }
+        }
+    }
+}
+
+/// Relative to the project root when inside it.
+fn shown(p: &Path) -> String {
+    let cwd = std::env::current_dir().unwrap_or_default();
+    p.strip_prefix(&cwd).unwrap_or(p).display().to_string()
+}
+
+fn resolve(p: &str) -> PathBuf {
+    let p = Path::new(p);
+    if p.is_absolute() { p.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(p) }
+}
+
+/// `path:line` references in text (byte range of `path:line` · target). Paths must look like files
+/// (a `/` or an extension) — no disk access, a miss only shows when followed.
+pub fn refs_in(text: &str) -> Vec<(Range<usize>, Link)> {
+    let is_path = |c: char| c.is_ascii_alphanumeric() || "_./-~+@".contains(c);
+    let b = text.as_bytes();
+    let mut out = Vec::new();
+    for (i, _) in text.match_indices(':') {
+        let digits = text[i + 1..].bytes().take_while(u8::is_ascii_digit).count();
+        if digits == 0 {
+            continue;
+        }
+        let start = text[..i]
+            .rfind(|c: char| !is_path(c))
+            .map_or(0, |j| j + text[j..].chars().next().map_or(1, char::len_utf8));
+        let path = text[start..i].trim_end_matches('.');
+        let file_like = path.contains('/')
+            || path
+                .rsplit_once('.')
+                .is_some_and(|(a, e)| !a.is_empty() && e.chars().any(|c| c.is_ascii_alphabetic()));
+        // URLs (`http://x.com:80`) and times (`12:30`) aren't files
+        if path.is_empty()
+            || !file_like
+            || (start > 0 && b[start - 1] == b':')
+            || !path.chars().any(|c| c.is_ascii_alphabetic())
+        {
+            continue;
+        }
+        let Ok(line) = text[i + 1..i + 1 + digits].parse::<usize>() else { continue };
+        out.push((start..i + 1 + digits, Link { path: resolve(path), line: line.saturating_sub(1) }));
+    }
+    out
+}
+
+/// Opens a link (keeps the chat's focus — the code shows beside the conversation).
+pub fn jump(ed: &mut Editor, link: Link) {
+    if !link.path.is_file() {
+        return ed.set_status(format!("{} isn't a file here", shown(&link.path)));
+    }
+    match ed.open_at(&link.path, link.line, 0) {
+        // Centered — the code around it is what the conversation is about
+        Ok(()) => ed.align_view(crate::viewalign::Place::Center),
+        Err(e) => ed.set_error(format!("{e:#}")),
+    }
+}
+
+/// `C-g`: the newest link, then one further back each press (wraps).
+pub fn follow(ed: &mut Editor) {
+    let Some(c) = &mut ed.chat else { return };
+    let links = c.links();
+    if links.is_empty() {
+        return ed.set_status("nothing to go to yet");
+    }
+    let link = links[links.len() - 1 - c.hop % links.len()].clone();
+    c.hop = (c.hop + 1) % links.len();
+    jump(ed, link);
 }
 
 // ── Keys ───────────────────────────────────────────────────────────────────
@@ -375,6 +577,7 @@ pub fn key(ed: &mut Editor, key: Key) -> bool {
         }
         (Code::Char('l'), true, _) => reset(ed),
         (Code::Char('r'), true, _) => apply_code(ed),
+        (Code::Char('g'), true, _) => follow(ed),
         (Code::Char('y'), true, _) => match c.last_code() {
             Some(code) => {
                 crate::clipboard::copy(&ed.events.jobs(), code);
@@ -507,5 +710,31 @@ mod tests {
         assert_eq!(c.last_code().as_deref(), Some("b\n"));
         c.msgs.push(Msg::new(Role::User, "q", ""));
         assert_eq!(c.last_code().as_deref(), Some("b\n"), "skips user messages");
+    }
+
+    #[test]
+    fn refs_in_answers() {
+        let text = "See `src/lib.rs:12` and main.rs:3-5 — 파일 /abs/p.rs:7. Not 12:30 or http://x.com:80.";
+        let got: Vec<(String, usize)> =
+            refs_in(text).into_iter().map(|(r, l)| (text[r].to_string(), l.line)).collect();
+        assert_eq!(got, [("src/lib.rs:12".into(), 11), ("main.rs:3".into(), 2), ("/abs/p.rs:7".into(), 6)]);
+        assert_eq!(refs_in("/abs/p.rs:7")[0].1.path, Path::new("/abs/p.rs"));
+        assert!(refs_in("no refs: 1, v1.2:3").is_empty());
+    }
+
+    #[test]
+    fn tool_calls_become_rows() {
+        let cwd = std::env::current_dir().unwrap();
+        let file = cwd.join("src/lib.rs");
+        let r = look("Read", &serde_json::json!({"file_path": file, "offset": 10, "limit": 40}));
+        assert_eq!((r.verb, r.what.as_str(), r.range.as_str()), ("read", "src/lib.rs", "L10–49"));
+        assert_eq!(r.link, Some(Link { path: file, line: 9 }));
+        let g = look("Grep", &serde_json::json!({"pattern": "fn add", "path": cwd.join("src")}));
+        assert_eq!(
+            (g.verb, g.what.as_str(), g.range.as_str(), g.pattern),
+            ("search", "fn add", "in src", true)
+        );
+        let f = look("Glob", &serde_json::json!({"pattern": "**/*.rs"}));
+        assert_eq!((f.verb, f.range.as_str(), f.link), ("find", "", None));
     }
 }

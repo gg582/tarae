@@ -151,6 +151,8 @@ pub struct Screen {
     pub picker_preview_x: Option<usize>,
     /// The floating docs card this frame (x, y, width, height) — drawing fills it in; the wheel scrolls it.
     pub popup: std::cell::Cell<Option<(usize, usize, usize, usize)>>,
+    /// Clickable spots in the chat pane: (row, start col, end col, where it points) — drawing fills them in.
+    pub chat_links: std::cell::RefCell<Vec<(usize, usize, usize, crate::chat::Link)>>,
 }
 
 /// One pane of a split: what it shows (a document) + its scroll. Cursor and selection are the document's.
@@ -651,6 +653,19 @@ impl Editor {
         self.current = (self.current as isize + delta).rem_euclid(n) as usize;
     }
 
+    /// Opens `path` with the cursor at (line, byte column) — a jump point is left behind.
+    pub fn open_at(&mut self, path: &Path, line: usize, col: usize) -> Result<()> {
+        self.push_jump();
+        self.open(path)?;
+        let doc = self.doc_mut();
+        let line = line.min(mv::last_line(&doc.text));
+        let (ls, le) = (mv::line_start(&doc.text, line), mv::line_end(&doc.text, line));
+        // If the byte column is mid-character (the file changed), snap to the char start
+        let pos = doc.text.char_to_byte(doc.text.byte_to_char((ls + col).min(le)));
+        doc.set_selection(Selection::point(pos));
+        Ok(())
+    }
+
     pub fn goto_line(&mut self, line: usize) {
         self.push_jump();
         let doc = self.doc_mut();
@@ -859,7 +874,13 @@ impl Editor {
             && x >= cx
         {
             match m.kind {
-                K::Down => c.focused = true,
+                K::Down => {
+                    c.focused = true;
+                    let links = s.chat_links.borrow();
+                    if let Some((.., link)) = links.iter().find(|l| l.0 == y && (l.1..l.2).contains(&x)) {
+                        crate::chat::jump(self, link.clone());
+                    }
+                }
                 K::ScrollUp => c.scroll += 3,
                 K::ScrollDown => c.scroll = c.scroll.saturating_sub(3),
                 _ => {}
@@ -1165,17 +1186,7 @@ impl Editor {
                 .map(|_| {
                     self.set_success(format!("Theme {name} · saved to your config"));
                 }),
-            Action::Goto { path, line, col } => {
-                self.push_jump();
-                self.open(&path).map(|_| {
-                    let doc = self.doc_mut();
-                    let line = line.min(mv::last_line(&doc.text));
-                    let (ls, le) = (mv::line_start(&doc.text, line), mv::line_end(&doc.text, line));
-                    // If the byte column is mid-character (the file changed), snap to the char start
-                    let pos = doc.text.char_to_byte(doc.text.byte_to_char((ls + col).min(le)));
-                    doc.set_selection(Selection::point(pos));
-                })
-            }
+            Action::Goto { path, line, col } => self.open_at(&path, line, col),
         };
         if let Err(e) = result {
             self.set_error(format!("{e:#}"));
@@ -2258,6 +2269,52 @@ mod tests {
         assert!(ed.chat.as_ref().is_some_and(|c| !c.focused));
         feed(&mut ed, "<space>L");
         assert!(ed.chat.is_none());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Claude reads other files itself: its tool calls become rows, open files (and unsaved text) go in the
+    /// context, and `C-g` walks the places it pointed at — newest first — while the chat keeps focus.
+    #[test]
+    fn chat_explores_the_project() {
+        let dir = std::env::temp_dir().join(format!("tarae-chat-explore-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let (main, lib) = (dir.join("src/main.rs"), dir.join("src/lib.rs"));
+        std::fs::write(&main, "fn main() {}\n").unwrap();
+        std::fs::write(&lib, "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n").unwrap();
+        let lib = std::fs::canonicalize(&lib).unwrap();
+        let log = dir.join("stdin.log");
+        let tool = serde_json::json!({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "Read", "input": {"file_path": lib, "offset": 2, "limit": 2}}]}});
+        let delta = serde_json::json!({"type": "stream_event", "event": {"type": "content_block_delta",
+            "delta": {"type": "text_delta", "text": format!("Defined at {}:1.", lib.display())}}});
+        let result = serde_json::json!({"type": "result", "result": "done"});
+        let script = format!(
+            "while read -r line; do printf '%s\\n' \"$line\" >> '{}'; printf '%s\\n' '{tool}' '{delta}' '{result}'; done",
+            log.display()
+        );
+        let mut ed = editor("");
+        ed.open(&lib).unwrap();
+        feed(&mut ed, "iX<esc>");
+        ed.open(&main).unwrap();
+        ed.config.llm.command = "sh".into();
+        ed.config.llm.args = vec!["-c".into(), script];
+        feed(&mut ed, "<space>lwhere is add?<ret>");
+        settle_until(&mut ed, |ed| !ed.chat.as_ref().unwrap().busy());
+        let c = ed.chat.as_ref().unwrap();
+        let roles: Vec<_> = c.msgs.iter().map(|m| m.role).collect();
+        use crate::chat::Role;
+        assert_eq!(roles, [Role::User, Role::Tool, Role::Assistant, Role::Note]);
+        assert_eq!(c.msgs[1].look.as_ref().unwrap().range, "L2–3");
+        let sent = std::fs::read_to_string(&log).unwrap();
+        assert!(sent.contains("<open-files>") && sent.contains("lib.rs (unsaved)"), "{sent}");
+        assert!(sent.contains("<unsaved-file"), "unsaved text rides along: {sent}");
+        // C-g: the answer's reference, then the read before it — the chat keeps the keys
+        feed(&mut ed, "<C-g>");
+        assert_eq!(ed.doc().path.as_deref(), Some(lib.as_path()));
+        assert_eq!(ed.doc().text.byte_to_line(ed.doc().selection().primary().cursor(&ed.doc().text)), 0);
+        feed(&mut ed, "<C-g>");
+        assert_eq!(ed.doc().text.byte_to_line(ed.doc().selection().primary().cursor(&ed.doc().text)), 1);
+        assert!(ed.chat.as_ref().unwrap().focused);
         std::fs::remove_dir_all(&dir).ok();
     }
 

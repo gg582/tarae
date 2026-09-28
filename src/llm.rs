@@ -132,6 +132,8 @@ pub enum StreamEv {
     Thinking,
     /// Answer text fragment (batched every 25 ms).
     Text(String),
+    /// A tool call (chat panel — Read·Grep·Glob with its full input).
+    Tool { name: String, input: serde_json::Value },
     /// End of a turn — final text or error (not logged in·stopped etc.).
     Done(Result<String, String>),
     /// The process exited (for the chat panel — last stderr line).
@@ -169,6 +171,18 @@ pub fn pump(
         if let Some(out) = child.stdout.take() {
             for line in BufReader::new(out).lines().map_while(Result::ok) {
                 let Ok(ev) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+                // Tool calls arrive whole in the assistant message — text streamed before them goes first
+                let tools = tool_uses(&ev);
+                if !tools.is_empty() {
+                    if !pending.is_empty() && !send(StreamEv::Text(std::mem::take(&mut pending))) {
+                        break;
+                    }
+                    thinking_sent = false;
+                    if !tools.into_iter().all(&send) {
+                        break;
+                    }
+                    continue;
+                }
                 match parse_line(&ev) {
                     Some(StreamEv::Text(t)) => {
                         pending.push_str(&t);
@@ -212,6 +226,38 @@ pub fn pump(
             send(StreamEv::Exit(err));
         }
     });
+}
+
+/// `tool_use` blocks of a complete assistant message.
+fn tool_uses(ev: &serde_json::Value) -> Vec<StreamEv> {
+    if ev["type"] != "assistant" {
+        return Vec::new();
+    }
+    let Some(content) = ev["message"]["content"].as_array() else { return Vec::new() };
+    content
+        .iter()
+        .filter(|b| b["type"] == "tool_use")
+        .map(|b| StreamEv::Tool {
+            name: b["name"].as_str().unwrap_or_default().to_string(),
+            input: b["input"].clone(),
+        })
+        .collect()
+}
+
+/// `args` with its `--tools <list>` swapped for `tools` (read-only ones for the chat panel) — also allowed
+/// up front, so `-p` never stops to ask.
+pub fn with_tools(args: &[String], tools: &str) -> Vec<String> {
+    let mut out = Vec::with_capacity(args.len() + 4);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if a == "--tools" {
+            it.next();
+        } else {
+            out.push(a.clone());
+        }
+    }
+    out.extend(["--tools", tools, "--allowedTools", tools].map(String::from));
+    out
 }
 
 fn parse_line(ev: &serde_json::Value) -> Option<StreamEv> {
@@ -556,7 +602,8 @@ pub fn ask(ed: &mut Editor, instruction: &str) -> Result<(), String> {
                 let result = r.and_then(|out| parse_replies(&out, n));
                 Box::new(move |ed: &mut Editor| on_result(ed, generation, result))
             }
-            StreamEv::Exit(_) => return None,
+            // ask runs without tools
+            StreamEv::Tool { .. } | StreamEv::Exit(_) => return None,
         })
     });
     Ok(())
@@ -858,5 +905,37 @@ mod tests {
         let p = build_prompt("upper", "x.txt", &text, &[(4, 8)], 1);
         assert!(p.contains("lines=\"2-2\""), "{p}");
         assert!(p.contains("<after>three\n</after>"), "{p}");
+    }
+
+    #[test]
+    fn tool_calls_come_from_assistant_messages() {
+        let ev = serde_json::json!({"type": "assistant", "message": {"content": [
+            {"type": "thinking", "thinking": ""},
+            {"type": "tool_use", "name": "Read", "input": {"file_path": "/p/src/lib.rs", "offset": 10}},
+            {"type": "tool_use", "name": "Grep", "input": {"pattern": "fn add"}},
+        ]}});
+        let got: Vec<(String, serde_json::Value)> = tool_uses(&ev)
+            .into_iter()
+            .map(|e| match e {
+                StreamEv::Tool { name, input } => (name, input),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].0, "Read");
+        assert_eq!(got[0].1["offset"], 10);
+        assert_eq!(got[1].1["pattern"], "fn add");
+        let text = serde_json::json!({"type": "assistant", "message": {"content": [{"type": "text", "text": "hi"}]}});
+        assert!(tool_uses(&text).is_empty());
+    }
+
+    #[test]
+    fn chat_tools_replace_the_no_tools_default() {
+        let args = with_tools(&LlmConfig::default().args, "Read,Grep,Glob");
+        let at = |f: &str| args.iter().position(|a| a == f).unwrap();
+        assert_eq!(args.iter().filter(|a| *a == "--tools").count(), 1);
+        assert_eq!(args[at("--tools") + 1], "Read,Grep,Glob");
+        assert_eq!(args[at("--allowedTools") + 1], "Read,Grep,Glob");
+        assert!(args.windows(2).all(|w| w[0] != "--setting-sources" || w[1].is_empty()), "rest kept");
     }
 }

@@ -659,6 +659,48 @@ fn snapshot_chat_empty() {
     s.check("chat_empty");
 }
 
+/// Chat panel after Claude explored the project: tool rows (search·find·read) and an answer whose
+/// `path:line` references are underlined links.
+#[test]
+fn snapshot_chat_explore() {
+    use crate::chat::{Link, Look, Msg, Role};
+    let mut s = Shot::new(100, 30);
+    s.file("src/demo.rs", DEMO_RS);
+    s.ed.config.llm.command = "sh".into();
+    s.ed.config.llm.args = vec!["-c".into(), "cat > /dev/null".into()];
+    s.keys(" l");
+    let msg = |role, text: &str, chip: &str, look: Option<Look>| Msg {
+        role,
+        text: text.into(),
+        chip: chip.into(),
+        look,
+        cache: Default::default(),
+    };
+    let look = |verb, what: &str, pattern, range: &str, link: Option<Link>| {
+        Some(Look { verb, what: what.into(), pattern, range: range.into(), link })
+    };
+    let lib = std::path::PathBuf::from("/p/src/lib.rs");
+    s.ed.chat.as_mut().unwrap().msgs = vec![
+        msg(Role::User, "Who calls word_counts?", "demo.rs · L5", None),
+        msg(Role::Tool, "", "", look("search", "word_counts\\(", true, "in src", None)),
+        msg(Role::Tool, "", "", look("find", "src/**/*.rs", true, "", None)),
+        msg(
+            Role::Tool,
+            "",
+            "",
+            look("read", "src/lib.rs", false, "L1–40", Some(Link { path: lib, line: 0 })),
+        ),
+        msg(
+            Role::Assistant,
+            "Only `main` does, at src/demo.rs:15. `src/lib.rs:12` has a copy that splits on commas.",
+            "",
+            None,
+        ),
+        msg(Role::Note, "2.4s", "", None),
+    ];
+    s.check("chat_explore");
+}
+
 /// Completion card with the selected item's docs — the list comes from a fake server (`cat`), the
 /// response is injected with `on_lsp_message`.
 #[test]

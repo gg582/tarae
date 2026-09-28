@@ -200,6 +200,7 @@ pub fn render(editor: &mut Editor, out: &mut impl Write, w: u16, h: u16) -> io::
         picker_preview_x: editor.picker.as_ref().and_then(|p| PickerBox::new(&lay, p).preview_x()),
         popup: std::cell::Cell::new(None),
         offer_buttons: offer.as_ref().map(|c| c.buttons.clone()).unwrap_or_default(),
+        chat_links: Default::default(),
     };
     editor.refresh_search(focus_lay.text_rows);
     // During `/` preview the screen follows the match, not the cursor
@@ -4352,9 +4353,15 @@ fn draw_chat(
     // ── Message rows (filled from the bottom)
     let area = rows.saturating_sub(input_h + 4); // title·divider + divider·hint
     let mut lines: Vec<Vec<Span>> = Vec::new();
+    // Rows that are links as a whole (tool calls), parallel to `lines`
+    let mut row_links: Vec<Option<crate::chat::Link>> = Vec::new();
     let sp = |text: String, style: Style| Span { text, style };
     let n = c.msgs.len();
+    let string = card.patch(t.try_get("string").unwrap_or(dim));
+    // The newest tool call is marked while Claude is still at it
+    let exploring = c.busy() && c.msgs.last().is_some_and(|m| m.role == Role::Tool);
     for (i, m) in c.msgs.iter().enumerate() {
+        row_links.resize(lines.len(), None);
         match m.role {
             Role::User => {
                 if !lines.is_empty() {
@@ -4386,6 +4393,30 @@ fn draw_chat(
                     }
                 }
             }
+            // `◦ read  src/lib.rs  L10–49` — one quiet row per call; a run of them stays together
+            Role::Tool => {
+                let Some(look) = &m.look else { continue };
+                if i == 0 || c.msgs[i - 1].role != Role::Tool {
+                    lines.push(Vec::new());
+                }
+                let glyph =
+                    if exploring && i + 1 == n { sp("●".into(), accent) } else { sp("◦".into(), faint) };
+                let head = format!(" {:<6} ", look.verb);
+                let range = if look.range.is_empty() { String::new() } else { format!("  {}", look.range) };
+                let room = w.saturating_sub(1 + head.width() + range.width()).max(4);
+                let what =
+                    if look.pattern { fit_ellipsis(&look.what, room) } else { fit_left(&look.what, room) };
+                let mut row = vec![glyph, sp(head, faint), sp(what, if look.pattern { string } else { dim })];
+                if !range.is_empty() {
+                    row.push(sp(
+                        fit(&range, w.saturating_sub(row.iter().map(|s| s.text.width()).sum())),
+                        faint,
+                    ));
+                }
+                lines.push(row);
+                row_links.resize(lines.len(), None);
+                *row_links.last_mut().expect("just pushed") = look.link.clone();
+            }
             // Elapsed time dimmed at the right end; stopped/error on the left
             Role::Note => {
                 let timing = m.text.ends_with('s') && m.text[..m.text.len() - 1].parse::<f32>().is_ok();
@@ -4397,7 +4428,7 @@ fn draw_chat(
             }
         }
     }
-    if c.state == State::Thinking {
+    if c.state == State::Thinking && !exploring {
         lines.push(Vec::new());
         lines.push(vec![sp(wave(c.started), accent), sp(" thinking…".into(), dim)]);
     }
@@ -4407,8 +4438,8 @@ fn draw_chat(
         let mut intro = vec![
             vec![sp("▎ ".into(), accent), sp("Ask Claude".into(), strong)],
             vec![],
-            vec![sp(fit(&format!("It sees {name} — your cursor,"), w), dim)],
-            vec![sp(fit("selection and diagnostics.", w), dim)],
+            vec![sp(fit("It reads the whole project,", w), dim)],
+            vec![sp(fit(&format!("starting from {name}."), w), dim)],
             vec![],
             vec![sp("tab ".into(), Style { bold: true, ..dim }), sp("for a suggestion".into(), faint)],
         ];
@@ -4418,10 +4449,12 @@ fn draw_chat(
         let pad = area.saturating_sub(intro.len()) / 2;
         lines = std::iter::repeat_n(Vec::new(), pad).chain(intro).collect();
     }
+    row_links.resize(lines.len(), None);
     let max_scroll = lines.len().saturating_sub(area);
     let scroll = c.scroll.min(max_scroll);
     let from = lines.len().saturating_sub(area + scroll);
     let shown = &lines[from..lines.len() - scroll];
+    let mut chat_links = editor.screen.chat_links.borrow_mut();
 
     // ── Draw row by row: [edge][margin 2][text w][margin 1]
     let edge = Style { fg: card.bg, bg: ui.base.bg, ..Style::default() };
@@ -4437,7 +4470,13 @@ fn draw_chat(
             sp(
                 format!(
                     " {} {:.1}s",
-                    if s == State::Thinking { "thinking" } else { "writing" },
+                    if exploring {
+                        "exploring"
+                    } else if s == State::Thinking {
+                        "thinking"
+                    } else {
+                        "writing"
+                    },
                     c.started.elapsed().as_secs_f32()
                 ),
                 dim,
@@ -4455,10 +4494,24 @@ fn draw_chat(
     queue!(out, Print("─".repeat(w)))?;
     chat_row_end(out, card, lay.chat_w, w)?;
     y += 1;
+    let text_x = x0 + 3;
     for i in 0..area {
         chat_row_start(out, x0, y, edge, card)?;
         let used = match shown.get(i) {
-            Some(l) => chat_spans(out, l, card, w)?,
+            Some(l) => match &row_links[from + i] {
+                Some(link) => {
+                    chat_links.push((y, text_x, text_x + w, link.clone()));
+                    chat_spans(out, l, card, w)?
+                }
+                // `path:line` in an answer: underlined, clickable
+                None => {
+                    let (l, found) = underline_refs(l);
+                    for (a, b, link) in found {
+                        chat_links.push((y, text_x + a, text_x + b, link));
+                    }
+                    chat_spans(out, &l, card, w)?
+                }
+            },
             None => 0,
         };
         chat_row_end(out, card, lay.chat_w, used)?;
@@ -4499,11 +4552,20 @@ fn draw_chat(
     } else if c.busy() {
         hints.push(("C-c", "stop"));
         hints.push(("esc", "editor"));
+        if !c.links().is_empty() {
+            hints.push(("C-g", "follow"));
+        }
     } else {
+        let code = c.last_code().is_some();
         hints.push(("enter", "send"));
         hints.push(("esc", "editor"));
-        if c.last_code().is_some() {
+        if code {
             hints.push(("C-r", "apply"));
+        }
+        if !c.links().is_empty() {
+            hints.push(("C-g", "go to"));
+        }
+        if code {
             hints.push(("C-y", "copy"));
         }
         hints.push(("C-l", "new"));
@@ -4574,6 +4636,63 @@ fn chat_markdown(
         }
     }
     out
+}
+
+/// A clickable span in the chat pane: (start col, end col, target).
+type RefSpot = (usize, usize, crate::chat::Link);
+
+/// Underlines the `path:line` references in one answer row → (row, where they are).
+fn underline_refs(
+    row: &[crate::markdown::Span],
+) -> (std::borrow::Cow<'_, [crate::markdown::Span]>, Vec<RefSpot>) {
+    use crate::markdown::Span;
+    let joined: String = row.iter().map(|s| s.text.as_str()).collect();
+    let refs = crate::chat::refs_in(&joined);
+    if refs.is_empty() {
+        return (std::borrow::Cow::Borrowed(row), Vec::new());
+    }
+    let mut out = Vec::new();
+    let mut at = 0; // byte offset of the span in `joined`
+    for s in row {
+        let end = at + s.text.len();
+        // Cut the span at every ref edge inside it
+        let mut cuts = vec![at, end];
+        for (r, _) in &refs {
+            cuts.extend([r.start, r.end].into_iter().filter(|&b| b > at && b < end));
+        }
+        cuts.sort_unstable();
+        cuts.dedup();
+        for pair in cuts.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            let inside = refs.iter().any(|(r, _)| r.start <= a && b <= r.end);
+            out.push(Span {
+                text: joined[a..b].to_string(),
+                style: Style { underline: s.style.underline || inside, ..s.style },
+            });
+        }
+        at = end;
+    }
+    let col = |b: usize| joined[..b].width();
+    let found = refs.into_iter().map(|(r, link)| (col(r.start), col(r.end), link)).collect();
+    (std::borrow::Cow::Owned(out), found)
+}
+
+/// Keeps the end (file name) of a path that doesn't fit: `…/editor/mod.rs`.
+fn fit_left(s: &str, width: usize) -> String {
+    if s.width() <= width {
+        return s.to_string();
+    }
+    let mut w = 1;
+    let mut tail: Vec<char> = Vec::new();
+    for ch in s.chars().rev() {
+        let cw = ch.width().unwrap_or(0);
+        if w + cw > width {
+            break;
+        }
+        w += cw;
+        tail.push(ch);
+    }
+    std::iter::once('…').chain(tail.into_iter().rev()).collect()
 }
 
 fn chat_row_start(out: &mut impl Write, x0: usize, y: usize, edge: Style, card: Style) -> io::Result<()> {

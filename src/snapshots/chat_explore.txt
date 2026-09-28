@@ -1,23 +1,23 @@
-# chat_empty · 100x30 · theme meok · cursor 26:65
+# chat_explore · 100x30 · theme meok · cursor 26:65
 ## text
 00  tarae  ›  src  ›  demo.rs
 01   1 use std::collections::HashMap;                          ▐  claude                         ready
 02   1                                                         ▐  ────────────────────────────────────
-03   2 ▎ Counts how often each word appears.                   ▐
-04     ▎                                                       ▐
+03   2 ▎ Counts how often each word appears.                   ▐  demo.rs · L5
+04     ▎                                                       ▐  ▎ Who calls word_counts?
 05     ▎ Words are split on whitespace; case is kept.          ▐
-06   5 pub fn word_counts(text: &str) -> HashMap<&str, usize> {▐
-07   6     let mut counts = HashMap::new();                    ▐
-08   7     for word in text.split_whitespace() {               ▐
-09   8     │   *counts.entry(word).or_insert(0) += 1;          ▐  ▎ Ask Claude
-10   9     }                                                   ▐
-11  10     counts                                              ▐  It reads the whole project,
-12  11 }                                                       ▐  starting from demo.rs.
-13  12                                                         ▐
-14  13 fn main() {                                             ▐  tab for a suggestion
-15  14     let text = "the quick brown fox jumps over the lazy ▐  › Explain what this file does
-16  15     let counts = word_counts(text);                     ▐  › Where is this used across the proj
-17  16     println!("{} distinct words", counts.len()); // 타래▐  › Why is this diagnostic happening?
+06   5 pub fn word_counts(text: &str) -> HashMap<&str, usize> {▐  ◦ search word_counts\(  in src
+07   6     let mut counts = HashMap::new();                    ▐  ◦ find   src/**/*.rs
+08   7     for word in text.split_whitespace() {               ▐  ◦ read   src/lib.rs  L1–40
+09   8     │   *counts.entry(word).or_insert(0) += 1;          ▐
+10   9     }                                                   ▐  Only main does, at src/demo.rs:15.
+11  10     counts                                              ▐  src/lib.rs:12 has a copy that
+12  11 }                                                       ▐  splits on commas.
+13  12                                                         ▐                                  2.4s
+14  13 fn main() {                                             ▐
+15  14     let text = "the quick brown fox jumps over the lazy ▐
+16  15     let counts = word_counts(text);                     ▐
+17  16     println!("{} distinct words", counts.len()); // 타래▐
 18  17 }                                                       ▐
 19                                                             ▐
 20                                                             ▐
@@ -27,7 +27,7 @@
 24                                                             ▐
 25                                                             ▐  ────────────────────────────────────
 26                                                             ▐  › Ask about demo.rs…
-27                                                             ▐  enter send  esc editor  C-l new
+27                                                             ▐  enter send  esc editor  C-g go to
 28  ▐ NORMAL ▌                                                                   rust   utf-8 LF   1:1
 29
 ## bg · surface per cell, blank = ui.background
@@ -65,21 +65,21 @@
 00  ddddd  f  ddd  f  TTTTTTT
 01   A                                                            TTTTTT                         fffff
 02   f                                                            ffffffffffffffffffffffffffffffffffff
-03   f
-04
+03   f                                                            fffffff f ff
+04                                                                a TTT TTTTT TTTTTTTTTTTT
 05
-06   f
-07   f
-08   f
-09   f                                                            a TTT TTTTTT
+06   f                                                            f ffffff ggggggggggggg  ff fff
+07   f                                                            f ffff   ggggggggggg
+08   f                                                            f ffff   dddddddddd  fffff
+09   f
 10   f
-11  ff                                                            dd ddddd ddd ddddd dddddddd
-12  ff                                                            dddddddd dddd dddddddd
-13  ff
-14  ff                                                            DDD fff f ffffffffff
-15  ff                gggg ggggg ggggg ggg ggggg gggg ggg gggg    f ddddddd dddd dddd dddd dddd
-16  ff                                                            f ddddd dd dddd dddd dddddd ddd dddd
-17  ff              ggg gggggggg gggggg                           f ddd dd dddd dddddddddd dddddddddd
+11  ff
+12  ff
+13  ff                                                                                            ffff
+14  ff
+15  ff                gggg ggggg ggggg ggg ggggg gggg ggg gggg
+16  ff
+17  ff              ggg gggggggg gggggg
 18  ff
 19
 20
@@ -89,7 +89,7 @@
 24
 25                                                                ffffffffffffffffffffffffffffffffffff
 26                                                                A fff fffff ffffffff
-27                                                                DDDDD ffff  DDD ffffff  DDD fff
+27                                                                DDDDD ffff  DDD ffffff  DDD ff ff
 28  a BBBBBB a                                                                   dddd   ddddd dd   TTT
 29
 ## legend
