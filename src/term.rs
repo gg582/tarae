@@ -2394,6 +2394,7 @@ fn draw_review(
                     &spans,
                     &capture_styles,
                     ui.base,
+                    (0, usize::MAX),
                 )?;
             }
             RRow::Header(i) => {
@@ -2591,10 +2592,11 @@ fn draw_code_line(
     spans: &[(usize, usize, u32)],
     capture_styles: &[Option<Style>],
     base: Style,
+    (from, to): (usize, usize),
 ) -> io::Result<usize> {
     let start = mv::line_start(text, line);
     let (sc, ec) = (text.byte_to_char(start), text.byte_to_char(mv::line_end(text, line)));
-    let end = text.char_to_byte(ec.min(sc + width + 64));
+    let end = text.char_to_byte(ec.min(sc + to.min(from + width) + 64));
     let s = text.byte_slice(start..end).to_string();
     let mut paint = vec![u32::MAX; s.len()];
     for &(a, b, c) in spans {
@@ -2605,8 +2607,12 @@ fn draw_code_line(
     }
     let mut current: Option<Style> = None;
     let mut used = 0;
+    // Display columns [from, to) of the line (a wrapped row), drawn from the current cell
     for c in graphemes::cells(&s, start, tab) {
-        if c.col + c.width > width {
+        if c.col < from {
+            continue;
+        }
+        if c.col >= to || c.col - from + c.width > width {
             break;
         }
         let g = &s[c.bytes.clone()];
@@ -2625,7 +2631,7 @@ fn draw_code_line(
         } else {
             queue!(out, Print(g))?;
         }
-        used = c.col + c.width;
+        used = c.col + c.width - from;
     }
     Ok(used)
 }
@@ -2691,12 +2697,32 @@ fn draw_picker(
         Some(Action::Command(_) | Action::Typed(_) | Action::Theme(_)) | None => String::new(),
     };
     let rows = b.list_rows + 4;
-    let preview = if b.preview_w > 0 { preview_lines(p, editor, b.list_rows) } else { None };
-    // Diffs scroll by dropping rows from the top (the last page stays)
+    let preview = if b.preview_w > 0 { preview_lines(p, editor, b.list_rows, b.preview_w) } else { None };
+    // Diffs scroll by dropping rows from the top (the last page stays); lines wider than the pane
+    // continue on the next rows
     let preview = preview.map(|v| match v {
         PreviewView::Diff { files, mut rows, styles } => {
             let skip = p.preview_scroll.min(rows.len().saturating_sub(b.list_rows));
             rows.drain(..skip);
+            let room = b.preview_w.saturating_sub(7); // "{:>4} " + sign + space
+            let tab = editor.config.tab_width;
+            let rows = rows
+                .into_iter()
+                .take(b.list_rows)
+                .flat_map(|(fi, li, _)| {
+                    let line = li.and_then(|li| files.get(fi)?.lines.get(li));
+                    match line {
+                        Some(l) if l.text.width() > room && l.kind != crate::editdiff::LineKind::Gap => {
+                            let r = ropey::Rope::from_str(&l.text);
+                            crate::wrap::rows(&r, 0, room, tab)
+                                .into_iter()
+                                .map(|part| (fi, li, Some(part)))
+                                .collect()
+                        }
+                        _ => vec![(fi, li, None)],
+                    }
+                })
+                .collect();
             PreviewView::Diff { files, rows, styles }
         }
         v => v,
@@ -2843,25 +2869,34 @@ fn draw_picker(
 }
 
 /// One preview page: text, syntax, first line, line to highlight — or a hint message.
+/// A diff preview row: file index, line in it (None = the file's header), which part of a wrapped line.
+type DiffRow = (usize, Option<usize>, Option<crate::wrap::Row>);
+
 enum PreviewView<'a> {
     Code {
         text: &'a ropey::Rope,
         syntax: Option<&'a crate::syntax::Syntax>,
-        first: usize,
+        /// Screen rows: (line, the part of it this row shows, is its first row) — long lines wrap.
+        rows: Vec<(usize, crate::wrap::Row, bool)>,
         focus: Option<usize>,
         spans: Vec<(usize, usize, u32)>,
     },
-    /// Changes the code action would make — per screen row (file index, line number | None = file header).
-    /// Blank row between files = usize::MAX.
+    /// Changes the code action would make — per screen row (file index, line number | None = file header,
+    /// the part of a wrapped line). Blank row between files = usize::MAX.
     Diff {
         files: std::sync::Arc<Vec<crate::editdiff::FileDiff>>,
-        rows: Vec<(usize, Option<usize>)>,
+        rows: Vec<DiffRow>,
         styles: Vec<Option<Style>>,
     },
     Note(String),
 }
 
-fn preview_lines<'a>(p: &'a Picker, editor: &'a Editor, rows: usize) -> Option<PreviewView<'a>> {
+fn preview_lines<'a>(
+    p: &'a Picker,
+    editor: &'a Editor,
+    rows: usize,
+    width: usize,
+) -> Option<PreviewView<'a>> {
     let action = &p.current()?.action;
     let (text, syntax, focus) = match action {
         Action::Buffer(id) => {
@@ -2874,13 +2909,13 @@ fn preview_lines<'a>(p: &'a Picker, editor: &'a Editor, rows: usize) -> Option<P
             if c.diff[0].lines.is_empty() {
                 return Some(PreviewView::Note("no line changes (mode or binary)".into()));
             }
-            let rows = (0..c.diff[0].lines.len()).map(|li| (0, Some(li))).collect();
+            let rows = (0..c.diff[0].lines.len()).map(|li| (0, Some(li), None)).collect();
             let styles = crate::syntax::capture_styles(|n| editor.theme.try_get(n));
             return Some(PreviewView::Diff { files: c.diff.clone(), rows, styles });
         }
         Action::ReplaceFile(n) => {
             let f = editor.replace_plan.get(*n)?;
-            let rows = (0..f.diff[0].lines.len()).map(|li| (0, Some(li))).collect();
+            let rows = (0..f.diff[0].lines.len()).map(|li| (0, Some(li), None)).collect();
             let styles = crate::syntax::capture_styles(|n| editor.theme.try_get(n));
             return Some(PreviewView::Diff { files: f.diff.clone(), rows, styles });
         }
@@ -2907,12 +2942,12 @@ fn preview_lines<'a>(p: &'a Picker, editor: &'a Editor, rows: usize) -> Option<P
                         files.len() > 1 || files.iter().any(|f| f.op != crate::editdiff::FileOp::Edit);
                     for (fi, f) in files.iter().enumerate() {
                         if fi > 0 {
-                            rows.push((usize::MAX, None));
+                            rows.push((usize::MAX, None, None));
                         }
                         if headers {
-                            rows.push((fi, None));
+                            rows.push((fi, None, None));
                         }
-                        rows.extend((0..f.lines.len()).map(|li| (fi, Some(li))));
+                        rows.extend((0..f.lines.len()).map(|li| (fi, Some(li), None)));
                     }
                     let styles = crate::syntax::capture_styles(|n| editor.theme.try_get(n));
                     PreviewView::Diff { files: files.clone(), rows, styles }
@@ -2932,7 +2967,21 @@ fn preview_lines<'a>(p: &'a Picker, editor: &'a Editor, rows: usize) -> Option<P
     // Scrolled (wheel / C-f C-b) from where it opens, but not past the last page
     let first = (focus.map_or(0, |f| f.saturating_sub(rows / 3)) + p.preview_scroll)
         .min(last.saturating_sub(rows.saturating_sub(1)).max(focus.unwrap_or(0).min(last)));
-    let end_line = (first + rows).min(last + 1).max(first + 1) - 1;
+    // Screen rows from `first` — a line wider than the pane continues on the next rows (no number there)
+    let tab = editor.config.tab_width;
+    let room = width.saturating_sub(6); // "{:>4}  "
+    let mut vis = Vec::with_capacity(rows);
+    let mut line = first;
+    while vis.len() < rows && line <= last {
+        for (k, part) in crate::wrap::rows(text, line, room, tab).into_iter().enumerate() {
+            if vis.len() == rows {
+                break;
+            }
+            vis.push((line, part, k == 0));
+        }
+        line += 1;
+    }
+    let end_line = line.saturating_sub(1).max(first);
     let spans = match syntax.filter(|s| s.tree.is_some()) {
         Some(syn) => crate::syntax::highlights(
             syn,
@@ -2942,7 +2991,7 @@ fn preview_lines<'a>(p: &'a Picker, editor: &'a Editor, rows: usize) -> Option<P
         ),
         None => Vec::new(),
     };
-    Some(PreviewView::Code { text, syntax, first, focus, spans })
+    Some(PreviewView::Code { text, syntax, rows: vis, focus, spans })
 }
 
 fn draw_preview_row(
@@ -2967,17 +3016,15 @@ fn draw_preview_row(
             queue!(out, Print(&msg))?;
             Ok(msg.width())
         }
-        PreviewView::Code { text, syntax, first, focus, spans } => {
-            let line = first + row;
-            if line > mv::last_line(text) {
-                return Ok(0);
-            }
+        PreviewView::Code { text, syntax, rows, focus, spans } => {
+            let Some(&(line, part, first_row)) = rows.get(row) else { return Ok(0) };
             let base = if *focus == Some(line) {
                 popup.patch(Style { bg: ui.cursorline.bg, ..Style::default() })
             } else {
                 popup
             };
-            let num = format!("{:>4}  ", line + 1);
+            // A wrapped line's later rows: no number, indented like the line
+            let num = if first_row { format!("{:>4}  ", line + 1) } else { " ".repeat(6 + part.x0) };
             apply(out, Style { fg: ui.linenr.fg, ..base })?;
             queue!(out, Print(&num))?;
             let styles: Vec<Option<Style>> = if syntax.is_some() {
@@ -2989,15 +3036,16 @@ fn draw_preview_row(
                 out,
                 text,
                 line,
-                width - num.len(),
+                width.saturating_sub(num.len()),
                 editor.config.tab_width,
                 spans,
                 &styles,
                 base,
+                (part.col, part.end_col),
             )?;
             if *focus == Some(line) {
                 apply(out, base)?;
-                queue!(out, Print(" ".repeat(width - num.len() - used)))?;
+                queue!(out, Print(" ".repeat(width.saturating_sub(num.len() + used))))?;
                 return Ok(width);
             }
             Ok(num.len() + used)
@@ -3018,7 +3066,7 @@ fn rel_path(p: &std::path::Path) -> String {
 fn draw_diff_row(
     out: &mut impl Write,
     files: &[crate::editdiff::FileDiff],
-    at: Option<(usize, Option<usize>)>,
+    at: Option<DiffRow>,
     width: usize,
     editor: &Editor,
     ui: &Ui,
@@ -3026,7 +3074,7 @@ fn draw_diff_row(
     styles: &[Option<Style>],
 ) -> io::Result<usize> {
     use crate::editdiff::{FileOp, LineKind};
-    let Some((fi, li)) = at else { return Ok(0) };
+    let Some((fi, li, part)) = at else { return Ok(0) };
     let Some(f) = files.get(fi) else { return Ok(0) };
     let t = &editor.theme;
     let faint = Style { fg: ui.linenr.fg, ..card };
@@ -3082,12 +3130,15 @@ fn draw_diff_row(
     let base = Style { bg: bg.or(card.bg), ..card };
     // Without truecolor (can't blend), use foreground color instead of background
     let tinted = bg.is_some() && l.kind != LineKind::Context;
+    // A wrapped line's later rows: no number or sign, indented like the line
+    let (from, to, x0) = part.map_or((0, usize::MAX, 0), |r| (r.col, r.end_col, r.x0));
+    let first_row = from == 0;
     apply(out, Style { fg: ui.linenr.fg, ..base })?;
-    let num = format!("{:>4} ", l.number);
+    let num = if first_row { format!("{:>4} ", l.number) } else { " ".repeat(5) };
     queue!(out, Print(&num))?;
     apply(out, Style { fg: sign_fg, bold: true, ..base })?;
-    queue!(out, Print(sign), Print(" "))?;
-    let mut used = num.len() + 2;
+    queue!(out, Print(if first_row { sign } else { " " }), Print(" "), Print(" ".repeat(x0)))?;
+    let mut used = num.len() + 2 + x0;
     let room = width.saturating_sub(used);
     let mut paint = vec![u32::MAX; l.text.len()];
     for &(a, b, c) in &l.spans {
@@ -3099,7 +3150,10 @@ fn draw_diff_row(
     let mut current: Option<Style> = None;
     let mut col = 0;
     for c in graphemes::cells(&l.text, 0, editor.config.tab_width) {
-        if c.col + c.width > room {
+        if c.col < from {
+            continue;
+        }
+        if c.col >= to || c.col - from + c.width > room {
             break;
         }
         let g = &l.text[c.bytes.clone()];
@@ -3126,7 +3180,7 @@ fn draw_diff_row(
         } else {
             queue!(out, Print(g))?;
         }
-        col = c.col + c.width;
+        col = c.col + c.width - from;
     }
     used += col;
     // Deleted/inserted lines get background to the end

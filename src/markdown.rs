@@ -22,7 +22,7 @@ pub enum Line {
         spans: Vec<Span>,
         indent: usize,
     },
-    /// One code line — truncated, not wrapped.
+    /// One code line — wraps under its own indentation.
     Code(Vec<Span>),
     Rule,
     Blank,
@@ -321,45 +321,53 @@ pub fn wrap(lines: &[Line], width: usize, rule: Style) -> Vec<Vec<Span>> {
         match line {
             Line::Blank => out.push(Vec::new()),
             Line::Rule => out.push(vec![Span { text: "─".repeat(width), style: rule }]),
-            Line::Code(spans) => out.push(cut(spans, width)),
-            Line::Text { spans, indent } => {
-                // Narrow box: a deep indent mustn't leave no room for text
-                let indent = (*indent).min(width / 2);
-                let cells: Vec<(char, Style)> =
-                    spans.iter().flat_map(|s| s.text.chars().map(move |c| (c, s.style))).collect();
-                let mut row: Vec<(char, Style)> = Vec::new();
-                let mut w = 0;
-                let mut i = 0;
-                while i < cells.len() {
-                    let (c, _) = cells[i];
-                    let cw = c.width().unwrap_or(0);
-                    // A row holding only the indent takes the char even if it overflows (else no progress)
-                    if w + cw > width && row.len() > indent {
-                        // Break at the last space (excluding spaces inside the indent), else mid-word
-                        let brk = row.iter().rposition(|(x, _)| *x == ' ').filter(|&p| p >= indent.max(1));
-                        let rest: Vec<(char, Style)> = match brk {
-                            Some(p) => {
-                                let rest = row.split_off(p + 1);
-                                row.pop();
-                                rest
-                            }
-                            None => Vec::new(),
-                        };
-                        out.push(group(&row));
-                        row = vec![(' ', Style::default()); indent];
-                        row.extend(rest);
-                        w = row.iter().map(|(x, _)| x.width().unwrap_or(0)).sum();
-                        continue;
-                    }
-                    row.push(cells[i]);
-                    w += cw;
-                    i += 1;
-                }
-                out.push(group(&row));
+            // Code wraps too (a card is narrower than code) — continuation rows hang under its indentation
+            Line::Code(spans) => {
+                let lead = spans.iter().flat_map(|s| s.text.chars()).take_while(|c| *c == ' ').count();
+                wrap_row(spans, lead, width, &mut out);
             }
+            Line::Text { spans, indent } => wrap_row(spans, *indent, width, &mut out),
         }
     }
     out
+}
+
+/// One line's spans into rows of `width`, broken at the last space (else mid-word); rows after the first
+/// start with `indent` spaces.
+fn wrap_row(spans: &[Span], indent: usize, width: usize, out: &mut Vec<Vec<Span>>) {
+    // Narrow box: a deep indent mustn't leave no room for text
+    let indent = indent.min(width / 2);
+    let cells: Vec<(char, Style)> =
+        spans.iter().flat_map(|s| s.text.chars().map(move |c| (c, s.style))).collect();
+    let mut row: Vec<(char, Style)> = Vec::new();
+    let mut w = 0;
+    let mut i = 0;
+    while i < cells.len() {
+        let (c, _) = cells[i];
+        let cw = c.width().unwrap_or(0);
+        // A row holding only the indent takes the char even if it overflows (else no progress)
+        if w + cw > width && row.len() > indent {
+            // Break at the last space (excluding spaces inside the indent), else mid-word
+            let brk = row.iter().rposition(|(x, _)| *x == ' ').filter(|&p| p >= indent.max(1));
+            let rest: Vec<(char, Style)> = match brk {
+                Some(p) => {
+                    let rest = row.split_off(p + 1);
+                    row.pop();
+                    rest
+                }
+                None => Vec::new(),
+            };
+            out.push(group(&row));
+            row = vec![(' ', Style::default()); indent];
+            row.extend(rest);
+            w = row.iter().map(|(x, _)| x.width().unwrap_or(0)).sum();
+            continue;
+        }
+        row.push(cells[i]);
+        w += cw;
+        i += 1;
+    }
+    out.push(group(&row));
 }
 
 fn group(cells: &[(char, Style)]) -> Vec<Span> {
@@ -373,32 +381,23 @@ fn group(cells: &[(char, Style)]) -> Vec<Span> {
     spans
 }
 
-fn cut(spans: &[Span], width: usize) -> Vec<Span> {
-    let mut out = Vec::new();
-    let mut w = 0;
-    for s in spans {
-        let mut text = String::new();
-        for c in s.text.chars() {
-            let cw = c.width().unwrap_or(0);
-            if w + cw > width {
-                break;
-            }
-            w += cw;
-            text.push(c);
-        }
-        if !text.is_empty() {
-            out.push(Span { text, style: s.style });
-        }
-        if w >= width {
-            break;
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Code in a card wraps at a space, continuing under its own indentation.
+    #[test]
+    fn code_wraps_under_its_indentation() {
+        let line = Line::Code(vec![Span {
+            text: "    let total = items.iter().sum();".into(),
+            style: Style::default(),
+        }]);
+        let rows: Vec<String> = wrap(&[line], 20, Style::default())
+            .iter()
+            .map(|r| r.iter().map(|s| s.text.as_str()).collect())
+            .collect();
+        assert_eq!(rows, ["    let total =", "    items.iter().sum", "    ();"]);
+    }
 
     fn plain(lines: &[Vec<Span>]) -> Vec<String> {
         lines.iter().map(|l| l.iter().map(|s| s.text.as_str()).collect()).collect()
