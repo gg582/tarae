@@ -4,7 +4,7 @@ version = "0.0.0"
 edition = "2024"
 publish = false
 description = "tarae dev tasks (cargo xtask …) — not part of the user binary"
-license = "MPL-2.0"
+license = "GPL-3.0-or-later"
 
 [dependencies]
 flate2 = "1"

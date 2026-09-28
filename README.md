@@ -98,5 +98,11 @@ More in the [configuration guide](docs/configuration.md); every setting is in th
 
 ## License
 
-[MPL-2.0](LICENSE), the same license as Helix. The query files in `runtime/queries/` come from Helix
-(MPL-2.0, see [NOTICE](runtime/queries/NOTICE)); grammar sources in `runtime/grammars.tar.gz` keep their upstream licenses.
+tarae is licensed under the [GNU General Public License, version 3 or later](LICENSE) (`GPL-3.0-or-later`).
+
+- The query files in `runtime/queries/` come from Helix and stay under MPL-2.0 (see [NOTICE](runtime/queries/NOTICE)
+  and [their license](runtime/queries/LICENSE)). MPL-2.0 files can be part of a GPL program.
+- Grammar sources in `runtime/grammars.tar.gz` keep their upstream licenses.
+- Everything up to commit `be9c633` (2026-09-28) was released under MPL-2.0 and stays available under it.
+
+Contributions need a signed Contributor License Agreement. See [Contributing](CONTRIBUTING.md#license-and-the-cla).

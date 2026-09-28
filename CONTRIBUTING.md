@@ -3,6 +3,13 @@
 Thanks for taking a look. This page covers how to build and test tarae and the handful of rules that keep it fast,
 correct, and good-looking. For the why behind them, read [docs/architecture.md](docs/architecture.md) first.
 
+## License and the CLA
+
+tarae is licensed under GPL-3.0-or-later. Before your first pull request can be merged, you sign the project's
+Contributor License Agreement once. The agreement lets the project keep its licensing options open, for example to
+offer tarae under other terms as well. The CLA is being set up. Until it's published, please open an issue before
+sending a pull request.
+
 ## Building and checking
 
 You need Rust 1.90+ and a C compiler (grammars are compiled from C).
