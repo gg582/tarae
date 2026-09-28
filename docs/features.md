@@ -101,7 +101,7 @@ configs carry over as they are.
 - **Pickers** (nucleo fuzzy matching, the same matcher as Helix) — `space f` files (`git ls-files` in a repository, so
   `.gitignore` is respected), `space b` buffers, `space /` global search (ripgrep when `rg` is installed, a built-in
   regex search otherwise). Lists fill in on a worker thread. `C-n`/`C-p` or arrows, `Tab`, `Enter`, `Esc`. On terminals
-  at least 100 columns wide, a syntax-highlighted preview sits on the right ([screenshot](screenshots/m2-file-picker.png))
+  at least 100 columns wide, a syntax-highlighted preview sits on the right ([screenshot](screenshots/m2-file-picker.png)). `space '` reopens the last one as you left it
 - **Search** `/ ? n N *` — matches highlight as you type, the view follows the first match (`Esc` puts you back), and
   the status line shows `/pattern  8/13`. `Esc` in normal mode clears the highlight
   ([screenshot](screenshots/ux-search.png))
@@ -183,7 +183,8 @@ cursor or document moved on are dropped.
   step per file
 - `gd` definition · `gD` declaration · `gy` type definition · `gi` implementation · `gr` references · `space k` hover
   — docs render as Markdown with code in its own colors ([screenshot](screenshots/m3-hover.png))
-- **Jump list** per pane — `C-o` back · `C-i`/Tab forward · `C-s` saves a spot. Go-tos, searches, `gg`/`ge` and
+- **Jump list** per pane — `C-o` back · `C-i`/Tab forward · `C-s` saves a spot · `space j` lists them (with a preview;
+  picking one keeps where you were, so `Tab` comes back). Go-tos, searches, `gg`/`ge` and
   switching files record where you were, and a saved spot follows later edits · `ga` = the file shown before this one
 - **Symbols** — `space s` in this file, `space S` across the workspace, with kind glyphs in the same colors as code
   ([file](screenshots/ux-symbols.png) · [workspace](screenshots/ux-workspace-symbols.png))

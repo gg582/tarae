@@ -200,6 +200,8 @@ commands! {
         goto_implementation => "Goto implementation (LSP)",
         goto_reference => "Goto references (LSP)",
         goto_last_accessed_file => "Goto last accessed file",
+        jumplist_picker => "Jump list",
+        last_picker => "Reopen the last picker",
         jump_backward => "Jump back to the previous spot",
         jump_forward => "Jump forward again",
         save_selection => "Save this spot to jump back to",
@@ -1387,6 +1389,12 @@ fn jump_forward(cx: &mut Context) {
 fn save_selection(cx: &mut Context) {
     cx.editor.push_jump();
     cx.editor.note("saved to the jump list (C-o returns here)");
+}
+fn jumplist_picker(cx: &mut Context) {
+    cx.editor.jumplist_picker()
+}
+fn last_picker(cx: &mut Context) {
+    cx.editor.reopen_last_picker()
 }
 fn goto_last_accessed_file(cx: &mut Context) {
     cx.editor.goto_last_accessed()

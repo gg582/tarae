@@ -188,6 +188,7 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 
 | Key | Command | Description |
 |---|---|---|
+| `space '` | `last_picker` | Reopen the last picker |
 | `space /` | `global_search` | Search in project |
 | `space ?` | `command_palette` | Find a command |
 | `space a` | `code_action` | Code actions |
@@ -198,6 +199,7 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `space f` | `file_picker` | Open file picker |
 | `space G` | … | More keys — see `space G` below |
 | `space i` | `llm_ask` | Ask Claude to edit selection |
+| `space j` | `jumplist_picker` | Jump list |
 | `space k` | `hover` | Show docs under cursor |
 | `space l` | `chat_open` | Chat with Claude |
 | `space L` | `chat_close` | Close chat |

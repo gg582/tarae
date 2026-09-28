@@ -2598,7 +2598,7 @@ fn draw_picker(
             .unwrap_or(path)
             .display()
             .to_string(),
-        Some(Action::Buffer(id)) => {
+        Some(Action::Buffer(id) | Action::Jump { doc: id, .. }) => {
             editor.docs.iter().find(|d| d.id == *id).map(|d| d.display_name()).unwrap_or_default()
         }
         Some(Action::Code(i)) => match editor.action_preview(*i) {
@@ -2681,7 +2681,11 @@ fn draw_picker(
                         base
                     };
                     let name = Style { bg: base.bg, ..name };
-                    // Annotation (keys etc.) dimmed at the right end — reserve its room first
+                    // Annotation (keys, a line of code …) dimmed at the right end — the label comes first, the
+                    // annotation gets what's left (cut with …)
+                    let room = lw.saturating_sub(1 + used + label.width() + 2);
+                    let hint = if room >= 4 { fit_ellipsis(hint, room) } else { String::new() };
+                    let hint = hint.as_str();
                     let hint_w = if hint.is_empty() { 0 } else { hint.width() + 2 };
                     let label_room = lw.saturating_sub(1 + hint_w);
                     used += print_matched(out, label, idx, name, matched, label_room.saturating_sub(used))?;
@@ -2779,6 +2783,10 @@ fn preview_lines<'a>(p: &'a Picker, editor: &'a Editor, rows: usize) -> Option<P
             let d = editor.docs.iter().find(|d| d.id == *id)?;
             let cur = mv::line_of(&d.text, d.selection().primary().head);
             (&d.text, d.syntax.as_ref(), Some(cur))
+        }
+        Action::Jump { doc, line, .. } => {
+            let d = editor.docs.iter().find(|d| d.id == *doc)?;
+            (&d.text, d.syntax.as_ref(), Some(*line))
         }
         Action::Code(i) => {
             use crate::lsp_editor::ActionPreview;

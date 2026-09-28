@@ -64,7 +64,7 @@ impl JumpList {
         self.jumps.len()
     }
 
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &Jump> {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &Jump> + DoubleEndedIterator {
         self.jumps.iter()
     }
 
@@ -174,6 +174,40 @@ impl Editor {
         {
             (v.doc, v.last_doc) = (j.doc, Some(old));
         }
+    }
+
+    /// Picked in the jump list: travel there (the current spot is kept first, like `C-o` does).
+    pub fn jump_to_entry(&mut self, i: usize) {
+        if self.focused_jumps().is_some_and(|l| l.at_end()) {
+            self.push_jump();
+        }
+        self.goto_jump(i);
+    }
+
+    /// `space j` — this pane's jumps, newest first: `file:line` and the line's text.
+    pub fn jumplist_picker(&mut self) {
+        let Some(list) = self.focused_jumps().cloned() else { return };
+        let items: Vec<crate::picker::Item> = list
+            .iter()
+            .enumerate()
+            .rev()
+            .filter_map(|(index, j)| {
+                let doc = self.docs.iter().find(|d| d.id == j.doc)?;
+                let sel = doc.mark(j.mark)?;
+                let line = doc.text.byte_to_line(sel.primary().cursor(&doc.text));
+                let text: String = doc.text.line(line).chars().take(200).collect();
+                Some(crate::picker::Item {
+                    label: format!("{}:{}", doc.display_name(), line + 1),
+                    action: crate::picker::Action::Jump { index, doc: j.doc, line },
+                    hint: text.trim().to_string(),
+                    glyph: None,
+                })
+            })
+            .collect();
+        if items.is_empty() {
+            return self.note("no jumps yet (go-tos, searches, gg/ge and file switches add them)");
+        }
+        self.open_picker(crate::picker::Picker::new("jumps", items, true), None);
     }
 
     /// `ga` — back to the document shown before this one in this pane.

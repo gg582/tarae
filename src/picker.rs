@@ -27,6 +27,12 @@ pub enum Action {
     Typed(String),
     /// Theme selection (previewed while choosing).
     Theme(String),
+    /// Entry `index` of the pane's jump list — in open document `doc`, at `line` (for the preview).
+    Jump {
+        index: usize,
+        doc: DocId,
+        line: usize,
+    },
     /// Line `line` (from 0) of the file, byte `col` within that line.
     Goto {
         path: PathBuf,
@@ -146,6 +152,10 @@ impl Picker {
         self.selected = (self.selected as isize + delta).rem_euclid(n as isize) as usize;
     }
 
+    pub fn items(&self) -> &[Item] {
+        &self.items
+    }
+
     pub fn current(&self) -> Option<&Item> {
         self.matches.get(self.selected).map(|&i| &self.items[i as usize])
     }
@@ -196,6 +206,7 @@ impl Action {
             Action::Open(p) => Some((p, None)),
             Action::Goto { path, line, .. } => Some((path, Some(*line))),
             Action::Buffer(_)
+            | Action::Jump { .. }
             | Action::Code(_)
             | Action::Command(_)
             | Action::Typed(_)

@@ -228,6 +228,8 @@ pub struct Editor {
     pub git_branch: Option<String>,
     /// Open picker (files, buffers, search results).
     pub picker: Option<Picker>,
+    /// The last picker closed (`space '`).
+    last_picker: Option<Picker>,
     picker_ids: u64,
     /// In-flight LLM request/review (one at a time).
     pub review: Option<Review>,
@@ -332,6 +334,7 @@ impl Editor {
             events: Queue::default(),
             review: None,
             picker: None,
+            last_picker: None,
             picker_ids: 0,
             git_branch: None,
             lsp: LspState::default(),
@@ -959,6 +962,23 @@ impl Editor {
         self.picker = Some(picker);
     }
 
+    /// A closing picker is kept for `space '` — not code actions (their list goes stale with the text).
+    fn keep_last_picker(&mut self) {
+        if let Some(p) = self.picker.take()
+            && !p.items().iter().any(|i| matches!(i.action, Action::Code(_)))
+        {
+            self.last_picker = Some(p);
+        }
+    }
+
+    /// `space '` — the last picker again, as it was left (query, selection).
+    pub fn reopen_last_picker(&mut self) {
+        match self.last_picker.take() {
+            Some(p) => self.open_picker(p, None),
+            None => self.note("no picker to reopen yet"),
+        }
+    }
+
     fn global_search(&mut self, pattern: String) {
         if pattern.is_empty() {
             return;
@@ -975,7 +995,7 @@ impl Editor {
         let Some(p) = self.picker.as_mut() else { return };
         match (key.code, key.ctrl) {
             (Code::Esc, _) | (Code::Char('c'), true) => {
-                self.picker = None;
+                self.keep_last_picker();
                 if let Some(t) = self.theme_before.take() {
                     self.theme = t;
                 }
@@ -983,7 +1003,7 @@ impl Editor {
             }
             (Code::Enter, _) => {
                 let action = p.current().map(|i| i.action.clone());
-                self.picker = None;
+                self.keep_last_picker();
                 self.theme_before = None;
                 if let Some(a) = action {
                     self.run_picker_action(a);
@@ -1042,6 +1062,10 @@ impl Editor {
         let result = match action {
             Action::Code(i) => {
                 self.run_code_action(i);
+                Ok(())
+            }
+            Action::Jump { index, .. } => {
+                self.jump_to_entry(index);
                 Ok(())
             }
             Action::Buffer(id) => {
@@ -2841,6 +2865,29 @@ q = \"delete_selection\"\n",
         // A new jump after going back drops the forward branch
         let ed = run("a\nb\nc\nd\n", "jgej<C-o>gg<tab>");
         assert_eq!(line(&ed), 0, "nothing ahead of gg any more");
+    }
+
+    /// `space j` lists the pane's jumps; picking one goes there (and `Tab` comes back). `space '` reopens
+    /// the last picker as it was left.
+    #[test]
+    fn jumplist_picker_and_reopening_the_last_picker() {
+        let line = |ed: &Editor| ed.doc().text.byte_to_line(ed.doc().selection().primary().head);
+        let mut ed = run("a\nb\nc\nd\n", "jge");
+        feed(&mut ed, " j");
+        let p = ed.picker.as_ref().expect("jump list open");
+        assert_eq!((p.title.as_str(), p.items().len()), ("jumps", 1));
+        assert!(p.items()[0].label.ends_with(":2"), "{}", p.items()[0].label);
+        feed(&mut ed, "<ret>");
+        assert_eq!(line(&ed), 1);
+        feed(&mut ed, "<tab>");
+        assert_eq!(line(&ed), 3, "the spot left is kept");
+        feed(&mut ed, " jd<esc> '");
+        let p = ed.picker.as_ref().expect("reopened");
+        assert_eq!((p.title.as_str(), p.query.as_str()), ("jumps", "d"));
+        feed(&mut ed, "<esc>");
+        let mut fresh = editor("x\n");
+        feed(&mut fresh, " '");
+        assert!(fresh.picker.is_none());
     }
 
     /// Switching files is a jump too (`C-o` returns to the previous file at its spot); `ga` toggles
