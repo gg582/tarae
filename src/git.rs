@@ -67,14 +67,15 @@ pub fn watch(tx: Sender<Event>) {
 
 // ── Changed-line markers (bar next to line numbers) ──────────────────────────
 
-/// Changed-line hunks against HEAD. `lines` = line range in the current document (empty for a deletion
-/// — deleted before that line).
+/// Changed-line hunks against the index (what `git add` last recorded). `lines` = line range in the
+/// current document (empty for a deletion — deleted before that line); `base` = the lines they replace.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Hunk {
     pub kind: HunkKind,
     pub lines: std::ops::Range<usize>,
-    /// Lines missing on the HEAD side (status line −N).
+    /// Lines missing on the index side (status line −N).
     pub removed: usize,
+    pub base: std::ops::Range<usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,7 +85,7 @@ pub enum HunkKind {
     Deleted,
 }
 
-/// HEAD content vs current content → hunks (histogram diff — same family as Helix and git).
+/// Index content vs current content → hunks (histogram diff — same family as Helix and git).
 pub fn hunks(base: &str, now: &str) -> Vec<Hunk> {
     use imara_diff::intern::InternedInput;
     use imara_diff::{Algorithm, diff};
@@ -96,19 +97,25 @@ pub fn hunks(base: &str, now: &str) -> Vec<Hunk> {
             (_, true) => HunkKind::Deleted,
             _ => HunkKind::Modified,
         };
-        out.push(Hunk { kind, lines: after.start as usize..after.end as usize, removed: before.len() });
+        out.push(Hunk {
+            kind,
+            lines: after.start as usize..after.end as usize,
+            removed: before.len(),
+            base: before.start as usize..before.end as usize,
+        });
     });
     out
 }
 
-/// This file's HEAD content in the repo (None outside a repo or for a new file). Runs on a worker thread.
-pub fn head_blob(path: &Path) -> Option<String> {
+/// This file's content in the index (None outside a repo or for an untracked file) — the gutter compares
+/// against it, so staged changes leave the gutter. Runs on a worker thread.
+pub fn index_blob(path: &Path) -> Option<String> {
     let dir = path.parent()?;
     let name = path.file_name()?.to_str()?;
     let out = std::process::Command::new("git")
         .arg("-C")
         .arg(dir)
-        .args(["show", &format!("HEAD:./{name}")])
+        .args(["show", &format!(":./{name}")])
         .stderr(std::process::Stdio::null())
         .output()
         .ok()?;
@@ -116,14 +123,15 @@ pub fn head_blob(path: &Path) -> Option<String> {
 }
 
 impl Editor {
-    /// (Re)load the document's HEAD content — on open and on regaining focus (may have committed outside).
+    /// (Re)load the document's index content — on open, on regaining focus (may have staged outside), after
+    /// staging a hunk.
     pub fn git_load_base(&mut self, id: crate::document::DocId) {
         if !self.git_auto {
             return;
         }
         let Some(path) = self.docs.iter().find(|d| d.id == id).and_then(|d| d.path.clone()) else { return };
         self.events.jobs().spawn(move || {
-            let base = head_blob(&path).map(std::sync::Arc::new);
+            let base = index_blob(&path).map(std::sync::Arc::new);
             move |ed: &mut Editor| {
                 if let Some(d) = ed.docs.iter_mut().find(|d| d.id == id)
                     && d.git_base.as_deref() != base.as_deref()
@@ -191,12 +199,12 @@ mod tests {
         let base = "a\nb\nc\nd\n";
         let now = "a\nB\nc\nnew\n";
         let h = hunks(base, now);
-        assert_eq!(h[0], Hunk { kind: HunkKind::Modified, lines: 1..2, removed: 1 });
-        assert_eq!(h[1], Hunk { kind: HunkKind::Modified, lines: 3..4, removed: 1 });
+        assert_eq!(h[0], Hunk { kind: HunkKind::Modified, lines: 1..2, removed: 1, base: 1..2 });
+        assert_eq!(h[1], Hunk { kind: HunkKind::Modified, lines: 3..4, removed: 1, base: 3..4 });
         let h = hunks("a\nb\n", "a\n");
-        assert_eq!(h, [Hunk { kind: HunkKind::Deleted, lines: 1..1, removed: 1 }]);
+        assert_eq!(h, [Hunk { kind: HunkKind::Deleted, lines: 1..1, removed: 1, base: 1..2 }]);
         let h = hunks("a\n", "a\nb\nc\n");
-        assert_eq!(h, [Hunk { kind: HunkKind::Added, lines: 1..3, removed: 0 }]);
+        assert_eq!(h, [Hunk { kind: HunkKind::Added, lines: 1..3, removed: 0, base: 1..1 }]);
     }
 
     #[test]

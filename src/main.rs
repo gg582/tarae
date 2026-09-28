@@ -17,6 +17,7 @@ mod editdiff;
 mod editor;
 mod event;
 mod git;
+mod gitmenu;
 mod grammar;
 mod graphemes;
 mod java;

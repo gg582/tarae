@@ -137,8 +137,12 @@ configs carry over as they are.
 - **Persistent undo** — on save, the last 1000 undo steps are written next to your state, so `u`/`U` keep working after
   a restart. If the file changed outside tarae, the history is quietly dropped
 - **Git gutter** — a thin bar between the line numbers and the text: added lines green, modified yellow, deletions a
-  red underline, compared against HEAD. Ticks on the scrollbar, `+3 −2` in the status line, `]g` `[g` between hunks.
-  Commit elsewhere and come back, and the baseline is reread ([screenshot](screenshots/ux-git.png))
+  red underline, compared against the index (so staged changes leave it). Ticks on the scrollbar, `+3 −2` in the
+  status line, `]g` `[g` between hunks. Stage or commit elsewhere and come back, and the baseline is reread
+  ([screenshot](screenshots/ux-git.png))
+- **`space g`** — `f` changed files (status letters in the gutter's colors) · `p` the change under the cursor as a
+  card · `r` undo it (an ordinary undoable edit) · `s` stage just that change (what the buffer has, saved or not) ·
+  `b` blame at the cursor line's end — author, age, commit summary — on/off
 - **Large files** (≥ 1 MB) load in the background — a 100 MB file shows its first screen in 18 ms. Editing and saving
   wait until the file is fully read, so a half-loaded buffer can never overwrite it
 

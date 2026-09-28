@@ -11,22 +11,22 @@
 08   7     for word in text.split_whitespace() {
 09   8     │   *counts.entry(word).or_insert(0) += 1;
 10   9     }
-11  10     counts
-12  11 }                     ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
-13  12                         space
-14  13 fn main() {
-15  14     let text = "the qu  '  Reopen the last picker           k  Show docs under cursor
-16  15     let counts = word_  /  Search in project                l  Chat with Claude
-17  16     println!("{} disti  ?  Find a command                   L  Close chat
-18  17 }                       a  Code actions                     p  Paste clipboard after
-19                             b  Open buffer picker               P  Paste clipboard before
-20                             c  Open Claude Code beside (conn…   r  Rename symbol
-21                             C  Send selection to Claude Code…   s  Symbols in this file
-22                             d  Diagnostics                      S  Symbols in the workspace
-23                             f  Open file picker                 t  Choose a theme (live preview)
-24                             G  …                                w  …
-25                             i  Ask Claude to edit selection     x  …
-26                             j  Jump list                        y  Copy to clipboard
+11  10     counts            ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+12  11 }                       space
+13  12
+14  13 fn main() {             '  Reopen the last picker           k  Show docs under cursor
+15  14     let text = "the qu  /  Search in project                l  Chat with Claude
+16  15     let counts = word_  ?  Find a command                   L  Close chat
+17  16     println!("{} disti  a  Code actions                     p  Paste clipboard after
+18  17 }                       b  Open buffer picker               P  Paste clipboard before
+19                             c  Open Claude Code beside (conn…   r  Rename symbol
+20                             C  Send selection to Claude Code…   s  Symbols in this file
+21                             d  Diagnostics                      S  Symbols in the workspace
+22                             f  Open file picker                 t  Choose a theme (live preview)
+23                             g  Git …                            w  Window …
+24                             G  Debug …                          x  Tests …
+25                             i  Ask Claude to edit selection     y  Copy to clipboard
+26                             j  Jump list
 27                           ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
 28  ▐ NORMAL ▌                                                                   rust   utf-8 LF   1:1
 29                                                                                                space
@@ -43,7 +43,7 @@
 09
 10
 11
-12
+12                           ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
 13                           ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
 14                           ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
 15                           ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
@@ -74,9 +74,9 @@
 09   f
 10   f
 11  ff
-12  ff
-13  ff                         BBBBB
-14  ff
+12  ff                         BBBBB
+13  ff
+14  ff                         A                                   A
 15  ff                gggg gg  A                                   A
 16  ff                         A                                   A
 17  ff              ggg ggggg  A                                   A
@@ -85,10 +85,10 @@
 20                             A                                   A
 21                             A                                   A
 22                             A                                   A
-23                             A                                   A
-24                             A  d                                A  d
-25                             A                                   A  d
-26                             A                                   A
+23                             A  ddd d                            A  dddddd d
+24                             A  ddddd d                          A  ddddd d
+25                             A                                   A
+26                             A
 27
 28  a BBBBBB a                                                                   dddd   ddddd dd   TTT
 29

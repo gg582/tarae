@@ -148,6 +148,13 @@ w = "dap_watch"
 W = "dap_unwatch"
 
 # Tests (x = run): test at cursor · debug · whole file · rerun last · close window
+[normal.space.g]
+f = "changed_file_picker"
+p = "git_preview_hunk"
+r = "git_reset_hunk"
+s = "git_stage_hunk"
+b = "git_toggle_blame"
+
 [normal.space.x]
 x = "test_nearest"
 d = "test_debug"

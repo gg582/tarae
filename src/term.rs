@@ -1964,6 +1964,23 @@ fn draw_text(
                 queue!(out, Print(&more))?;
             }
         }
+        // Blame (`space g b`): who changed the cursor line, when, and why — faint, only where the line end is
+        // free (a diagnostic or debugger values take it first)
+        if focused
+            && line == cur_line
+            && last
+            && !clipped
+            && line_message_here.is_none()
+            && extra_used == 0
+            && let Some(b) = editor.blame_here(line)
+        {
+            let used = x0 + col.saturating_sub(row_left) + shift + 1;
+            let room = lay.text_cols.saturating_sub(used + 3);
+            if room >= 12 {
+                apply(out, Style { fg: ui.linenr.fg, italic: true, ..line_base })?;
+                queue!(out, Print("   "), Print(fit_ellipsis(&b, room)))?;
+            }
+        }
         clear_rest(out, line_base)?;
     }
     if lay.scrollbar {
@@ -4015,16 +4032,18 @@ fn draw_which_key(editor: &Editor, ui: &Ui, lay: &Layout, out: &mut impl Write) 
     let pad = card_padding(ui, card);
     let key_style = Style { fg: ui.accent.fg, bold: true, ..card };
     let dim = Style { fg: ui.virt.fg, ..card };
-    let title = match editor.pending.first().map(|k| k.to_string()).as_deref() {
-        Some("space") => "space",
-        Some("g") => "goto",
-        Some("m") => "match",
-        Some("[") => "previous",
-        Some("]") => "next",
-        Some("z") | Some("Z") => "view",
-        _ => "keys",
-    };
     let pending: Vec<String> = editor.pending.iter().map(|k| k.to_string()).collect();
+    // The group's name (`space g` → git); the first key's otherwise
+    let title = match crate::keymap::group_name(&pending.join(" ")) {
+        Some(name) => name.to_lowercase(),
+        None => match pending.first().map(String::as_str) {
+            Some("space") => "space",
+            Some("z") | Some("Z") => "view",
+            _ => "keys",
+        }
+        .to_string(),
+    };
+    let title = title.as_str();
     let kw = entries.iter().map(|(k, _, _)| k.to_string().width()).max().unwrap_or(1);
     const DESC: usize = 30;
     let dw = entries.iter().map(|(_, d, _)| d.width()).max().unwrap_or(0).min(DESC);

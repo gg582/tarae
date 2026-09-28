@@ -203,6 +203,8 @@ pub struct Editor {
     /// shown in the preview picker.
     pub(crate) replace_targets: Option<(String, crate::replace::Targets)>,
     pub(crate) replace_plan: Vec<crate::replace::FilePlan>,
+    /// `space g b` blame (gitmenu.rs).
+    pub blame: crate::gitmenu::BlameState,
     /// `gw` labels on screen (labels.rs) — the next two keys pick one.
     pub jump_labels: Option<crate::labels::Labels>,
     /// Length of the key sequence behind the last command — to drop `Q` itself when recording stops.
@@ -396,6 +398,7 @@ impl Editor {
             repeating_insert: false,
             expand_history: Vec::new(),
             jump_labels: None,
+            blame: Default::default(),
             replace_targets: None,
             replace_plan: Vec::new(),
             next_id: 0,
@@ -783,6 +786,7 @@ impl Editor {
         self.lsp_flush();
         self.inlay_schedule();
         self.git_schedule();
+        self.blame_schedule();
         self.agent_next_diff();
         self.agent_selection_tick(false);
         self.schedule_tick();
@@ -2087,6 +2091,49 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&a).unwrap(), "foo one\nbar\nfoo two\n", "not saved yet");
         feed(&mut ed, ":wa<ret>");
         assert_eq!(std::fs::read_to_string(&b).unwrap(), "baz three\n");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// `space g`: with the index as the gutter's base, `r` resets a hunk, `s` stages it (it leaves the
+    /// gutter and shows in `git diff --cached`), `b` blames the cursor line.
+    #[test]
+    fn git_menu_reset_stage_blame() {
+        let dir = std::env::temp_dir().join(format!("tarae-gitmenu-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let dir = std::fs::canonicalize(&dir).unwrap();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git").arg("-C").arg(&dir).args(args).output().expect("git").stdout
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.name", "Kim"]);
+        git(&["config", "user.email", "kim@example.com"]);
+        let file = dir.join("a.txt");
+        std::fs::write(&file, "one\ntwo\nthree\n").unwrap();
+        git(&["add", "a.txt"]);
+        git(&["commit", "-qm", "first"]);
+        let mut ed = editor("");
+        ed.git_auto = true;
+        ed.open(&file).unwrap();
+        settle_until(&mut ed, |ed| ed.doc().git_base.is_some());
+        feed(&mut ed, "jmiwcTWO<esc>");
+        settle_until(&mut ed, |ed| !ed.doc().git_hunks.is_empty());
+        feed(&mut ed, " gr");
+        assert_eq!(text(&ed), "one\ntwo\nthree\n", "reset");
+        feed(&mut ed, "u");
+        settle_until(&mut ed, |ed| ed.doc().git_hunks.len() == 1);
+        feed(&mut ed, " gs");
+        settle_until(&mut ed, |ed| ed.doc().git_hunks.is_empty());
+        let staged = String::from_utf8(git(&["diff", "--cached"])).unwrap();
+        assert!(staged.contains("-two") && staged.contains("+TWO"), "{staged}");
+        feed(&mut ed, "ggOnew<esc> gb");
+        ed.blame_schedule(); // the event loop does this after every event
+        settle_until(&mut ed, |ed| ed.blame.of.is_some_and(|(_, v)| v == ed.doc().version()));
+        assert_eq!(ed.blame_here(0).as_deref(), Some("not committed yet"));
+        assert!(
+            ed.blame_here(1).is_some_and(|b| b.starts_with("Kim, ") && b.ends_with("· first")),
+            "{:?}",
+            ed.blame_here(1)
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

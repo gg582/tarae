@@ -203,6 +203,7 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `space C` | `claude_code_mention` | Send selection to Claude Code (@) |
 | `space d` | `diagnostics_picker` | Diagnostics |
 | `space f` | `file_picker` | Open file picker |
+| `space g` | … | More keys — see `space g` below |
 | `space G` | … | More keys — see `space G` below |
 | `space i` | `llm_ask` | Ask Claude to edit selection |
 | `space j` | `jumplist_picker` | Jump list |
@@ -218,6 +219,16 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `space w` | … | More keys — see `space w` below |
 | `space x` | … | More keys — see `space x` below |
 | `space y` | `yank_to_clipboard` | Copy to clipboard |
+
+### `space g`
+
+| Key | Command | Description |
+|---|---|---|
+| `space g b` | `git_toggle_blame` | Blame on this line (on/off) |
+| `space g f` | `changed_file_picker` | Changed files (git) |
+| `space g p` | `git_preview_hunk` | Show this change |
+| `space g r` | `git_reset_hunk` | Undo this change |
+| `space g s` | `git_stage_hunk` | Stage this change |
 
 ### `space G`
 

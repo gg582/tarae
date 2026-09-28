@@ -152,6 +152,21 @@ impl Default for Keymaps {
     }
 }
 
+/// Names of the built-in key groups (which-key shows them; groups from a user config show `…`).
+pub fn group_name(path: &str) -> Option<&'static str> {
+    Some(match path {
+        "space g" => "Git",
+        "space G" => "Debug",
+        "space w" | "C-w" => "Window",
+        "space x" => "Tests",
+        "g" => "Goto",
+        "m" => "Match",
+        "[" => "Previous",
+        "]" => "Next",
+        _ => return None,
+    })
+}
+
 impl Keymaps {
     /// A bundle of `{normal, select, insert}` tables. select = normal with overrides on top (as in helix).
     fn from_toml_tables(table: &toml::Table, path: &str, warnings: &mut Vec<String>) -> Self {
@@ -191,7 +206,11 @@ impl Keymaps {
         node.sorted()
             .into_iter()
             .map(|(k, t)| match t {
-                KeyTrie::Node(_) => (*k, "…".to_string(), true),
+                KeyTrie::Node(_) => {
+                    let path: Vec<String> = keys.iter().chain([k]).map(Key::to_string).collect();
+                    let name = group_name(&path.join(" ")).map_or("…".to_string(), |n| format!("{n} …"));
+                    (*k, name, true)
+                }
                 KeyTrie::Leaf(cmds) => {
                     let desc = cmds.first().map(|c| c.doc().trim_end_matches(" (LSP)").to_string());
                     (*k, desc.unwrap_or_default(), false)

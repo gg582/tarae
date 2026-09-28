@@ -139,6 +139,11 @@ commands! {
         goto_prev_test => "Previous test",
         goto_next_paragraph => "Next paragraph",
         goto_prev_paragraph => "Previous paragraph",
+        changed_file_picker => "Changed files (git)",
+        git_preview_hunk => "Show this change",
+        git_reset_hunk => "Undo this change",
+        git_stage_hunk => "Stage this change",
+        git_toggle_blame => "Blame on this line (on/off)",
         goto_word => "Jump to a word by its label",
         extend_to_word => "Extend selection to a labelled word",
         expand_selection => "Grow selection to the enclosing syntax node",
@@ -925,6 +930,24 @@ fn textobject(cx: &mut Context, ch: char, kind: to::Kind) {
         };
         cx.editor.set_status(format!("m{ch}: {what}"));
     }
+}
+
+// ── git (body in gitmenu.rs) ─────────────────────────────────────────────
+
+fn changed_file_picker(cx: &mut Context) {
+    cx.editor.git_changed_files()
+}
+fn git_preview_hunk(cx: &mut Context) {
+    cx.editor.git_preview_hunk()
+}
+fn git_reset_hunk(cx: &mut Context) {
+    cx.editor.git_reset_hunk()
+}
+fn git_stage_hunk(cx: &mut Context) {
+    cx.editor.git_stage_hunk()
+}
+fn git_toggle_blame(cx: &mut Context) {
+    cx.editor.git_toggle_blame()
 }
 
 // ── Jump labels (body in labels.rs) ──────────────────────────────────────
