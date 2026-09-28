@@ -21,7 +21,7 @@ and rebuilds everything else to fix what bothered us about Helix. It is not a fo
 
 ```sh
 git clone https://github.com/eth219/tarae && cd tarae
-cargo install --path .                               # Rust 1.88+ and a C compiler
+cargo install --path .                               # Rust 1.90+ and a C compiler
 # cargo install --path . --features bundled-grammars # or: 26 common grammars built in, nothing to download later
 tarae path/to/file
 ```
