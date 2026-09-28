@@ -25,6 +25,14 @@ impl MappableCommand {
             None => commands::find(s).map(Self::Static).ok_or_else(|| format!("unknown command: {s}")),
         }
     }
+
+    /// What it does, in plain words — the command's doc, or the command line itself for `:cmd`.
+    pub fn doc(&self) -> String {
+        match self {
+            Self::Static(c) => c.doc.to_string(),
+            Self::Typed(line) => format!(":{line}"),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -54,6 +62,17 @@ impl Node {
                 }
             }
         }
+    }
+
+    /// Entries in display order (which-key, docs): single characters before named keys (`esc`, `C-w`),
+    /// alphabetical, lowercase before uppercase. Total (`A-C`/`A-c` tie otherwise), so the order is stable.
+    fn sorted(&self) -> Vec<(&Key, &KeyTrie)> {
+        let mut out: Vec<_> = self.map.iter().collect();
+        out.sort_by_cached_key(|(k, _)| {
+            let s = k.to_string();
+            (s.chars().count() > 1, s.to_lowercase(), s.chars().next().is_some_and(char::is_uppercase), s)
+        });
+        out
     }
 
     pub fn search(&self, keys: &[Key]) -> Option<&KeyTrie> {
@@ -169,26 +188,16 @@ impl Keymaps {
     /// (key, description, is submode). Description = command doc (the line for `:cmd`), lowercase first.
     pub fn children(&self, mode: Mode, keys: &[Key]) -> Vec<(Key, String, bool)> {
         let Some(KeyTrie::Node(node)) = self.root(mode).search(keys) else { return Vec::new() };
-        let mut out: Vec<(Key, String, bool)> = node
-            .map
-            .iter()
+        node.sorted()
+            .into_iter()
             .map(|(k, t)| match t {
                 KeyTrie::Node(_) => (*k, "…".to_string(), true),
                 KeyTrie::Leaf(cmds) => {
-                    let desc = match cmds.first() {
-                        Some(MappableCommand::Static(c)) => c.doc.trim_end_matches(" (LSP)").to_string(),
-                        Some(MappableCommand::Typed(line)) => format!(":{line}"),
-                        None => String::new(),
-                    };
-                    (*k, desc, false)
+                    let desc = cmds.first().map(|c| c.doc().trim_end_matches(" (LSP)").to_string());
+                    (*k, desc.unwrap_or_default(), false)
                 }
             })
-            .collect();
-        out.sort_by_key(|(k, _, _)| {
-            let s = k.to_string();
-            (s.chars().count() > 1, s.to_lowercase(), s.chars().next().is_some_and(char::is_uppercase))
-        });
-        out
+            .collect()
     }
 
     /// Command name → shortest key bound to it (normal mode) — shown in the command palette.
@@ -235,17 +244,133 @@ mod tests {
 
     fn name(km: &Keymaps, mode: Mode, s: &str) -> Option<String> {
         match km.lookup(mode, &keys(s)) {
-            Lookup::Matched(cmds) => Some(
-                cmds.iter()
-                    .map(|c| match c {
-                        MappableCommand::Static(c) => c.name.to_string(),
-                        MappableCommand::Typed(t) => format!(":{t}"),
-                    })
-                    .collect::<Vec<_>>()
-                    .join(","),
-            ),
+            Lookup::Matched(cmds) => Some(cmd_names(cmds).join(",")),
             _ => None,
         }
+    }
+
+    /// Command names of a binding (`:line` for typed commands) — several run in sequence.
+    fn cmd_names(cmds: &[MappableCommand]) -> Vec<String> {
+        cmds.iter()
+            .map(|c| match c {
+                MappableCommand::Static(c) => c.name.to_string(),
+                MappableCommand::Typed(t) => format!(":{t}"),
+            })
+            .collect()
+    }
+
+    fn row(out: &mut String, keys: &str, cmds: &[MappableCommand]) {
+        use crate::settings::{md_cell, md_code};
+        let names: Vec<String> = cmd_names(cmds).iter().map(|n| md_code(n)).collect();
+        // "Extend up, then extend selection to line bounds"
+        let docs: Vec<String> = cmds
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                let doc = c.doc();
+                let mut chars = doc.chars();
+                match (i, chars.next(), chars.next()) {
+                    (1.., Some(first), Some(second)) if second.is_lowercase() => {
+                        format!("{}{}", first.to_lowercase(), &doc[first.len_utf8()..])
+                    }
+                    _ => doc,
+                }
+            })
+            .map(|d| md_cell(&d))
+            .collect();
+        out.push_str(&format!("| {} | {} | {} |\n", md_code(keys), names.join(" + "), docs.join(", then ")));
+    }
+
+    const TABLE_HEAD: &str = "| Key | Command | Description |\n|---|---|---|\n";
+
+    /// A node's keys (submodes point below), then one table per submode, depth first.
+    fn node_tables(out: &mut String, node: &Node, prefix: &mut Vec<String>, heading: &str) {
+        out.push_str(&format!("\n{heading}\n\n{TABLE_HEAD}"));
+        for (k, t) in node.sorted() {
+            let seq = prefix.iter().cloned().chain([k.to_string()]).collect::<Vec<_>>().join(" ");
+            match t {
+                KeyTrie::Leaf(cmds) => row(out, &seq, cmds),
+                KeyTrie::Node(_) => out.push_str(&format!(
+                    "| {} | … | More keys — see {} below |\n",
+                    crate::settings::md_code(&seq),
+                    crate::settings::md_code(&seq)
+                )),
+            }
+        }
+        for (k, t) in node.sorted() {
+            if let KeyTrie::Node(sub) = t {
+                prefix.push(k.to_string());
+                let title = format!("### {}", crate::settings::md_code(&prefix.join(" ")));
+                node_tables(out, sub, prefix, &title);
+                prefix.pop();
+            }
+        }
+    }
+
+    fn leaves<'a>(node: &'a Node, prefix: &[Key], out: &mut Vec<(Vec<Key>, &'a [MappableCommand])>) {
+        for (k, t) in node.sorted() {
+            let seq: Vec<Key> = prefix.iter().copied().chain([*k]).collect();
+            match t {
+                KeyTrie::Leaf(cmds) => out.push((seq, cmds)),
+                KeyTrie::Node(sub) => leaves(sub, &seq, out),
+            }
+        }
+    }
+
+    /// `docs/reference/keymap.md` — the default keymap per mode and submode (descriptions = command docs,
+    /// the same text which-key and the palette show), then every `:` command from `cmdline::COMMANDS`.
+    fn reference() -> String {
+        use crate::settings::{md_cell, md_code};
+        let km = Keymaps::default();
+        let mut out = String::from(
+            "<!-- Generated from src/default_keys.toml and the command registry — do not edit; regenerate \
+             with `TARAE_BLESS=1 cargo test keymap_reference`. -->\n\
+             # Default keymap\n\n\
+             The keys tarae ships with, from [`src/default_keys.toml`](../../src/default_keys.toml). Command names \
+             are the same as Helix's,\nso Helix key configs carry over. Rebind anything in `[keys.normal]`, \
+             `[keys.select]`, or `[keys.insert]` —\nsee the [configuration guide](../configuration.md#keys).\n\n\
+             In the editor you don't need this page: `space ?` finds any command by what it does, and after a \
+             prefix key\n(`space`, `g`, `m`, `[`, `]`) a card shows what comes next.\n",
+        );
+        node_tables(&mut out, &km.normal, &mut Vec::new(), "## Normal mode");
+
+        out.push_str(
+            "\n## Select mode\n\n`v` enters select mode. Every normal-mode key works here too, except these — \
+             movement extends the selection instead:\n\n",
+        );
+        out.push_str(TABLE_HEAD);
+        let mut select = Vec::new();
+        leaves(&km.select, &[], &mut select);
+        for (seq, cmds) in select {
+            let same = matches!(km.lookup(Mode::Normal, &seq), Lookup::Matched(n) if cmd_names(n) == cmd_names(cmds));
+            if !same {
+                let seq = seq.iter().map(Key::to_string).collect::<Vec<_>>().join(" ");
+                row(&mut out, &seq, cmds);
+            }
+        }
+
+        node_tables(&mut out, &km.insert, &mut Vec::new(), "## Insert mode");
+
+        out.push_str(
+            "\n## `:` commands\n\nType `:` in normal mode. `Tab` completes command names and their arguments \
+             (paths, themes, settings, languages).\n\n| Command | Aliases | Description |\n|---|---|---|\n",
+        );
+        for c in crate::cmdline::COMMANDS {
+            let aliases: Vec<String> = c.names[1..].iter().map(|a| md_code(&format!(":{a}"))).collect();
+            out.push_str(&format!(
+                "| {} | {} | {} |\n",
+                md_code(&format!(":{}", c.names[0])),
+                aliases.join(" "),
+                md_cell(c.doc)
+            ));
+        }
+        out
+    }
+
+    #[test]
+    fn keymap_reference_is_up_to_date() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/docs/reference/keymap.md");
+        crate::settings::check_generated(path, &reference(), "keymap_reference");
     }
 
     #[test]

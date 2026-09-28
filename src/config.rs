@@ -321,16 +321,43 @@ fn set_path(doc: &mut DocumentMut, path: &str, v: &Value) -> Result<(), String> 
 mod tests {
     use super::*;
 
+    /// The ```toml blocks of a Markdown file.
+    fn toml_blocks(md: &str) -> Vec<&str> {
+        md.split("```toml\n").skip(1).map(|b| &b[..b.find("```").unwrap()]).collect()
+    }
+
     #[test]
-    fn readme_config_example_loads_cleanly() {
-        // The first ```toml block under README's "## Configuration" — keeps the documented example valid.
-        let readme = include_str!("../README.md");
-        let section = &readme[readme.find("## Configuration").unwrap()..];
-        let block = &section[section.find("```toml\n").unwrap() + 8..];
-        let (c, w) = parse(&block[..block.find("\n```").unwrap()]);
+    fn configuration_guide_example_loads_cleanly() {
+        // The first ```toml block under docs/configuration.md's "## Full example" — the canonical example.
+        let guide = include_str!("../docs/configuration.md");
+        let section = &guide[guide.find("## Full example").unwrap()..];
+        let (c, w) = parse(toml_blocks(section)[0]);
         assert!(w.is_empty(), "{w:?}");
         assert!(c.editor.color_modes);
         assert_eq!(c.editor.line_number, LineNumber::Relative);
+        assert_eq!(c.editor.llm.model.as_deref(), Some("haiku"));
+    }
+
+    #[test]
+    fn documented_config_snippets_load_cleanly() {
+        // Every TOML snippet in the docs is either a config file (must load without warnings) or a theme file.
+        let docs = [
+            ("README.md", include_str!("../README.md")),
+            ("docs/configuration.md", include_str!("../docs/configuration.md")),
+            ("docs/testing-and-debugging.md", include_str!("../docs/testing-and-debugging.md")),
+            ("docs/claude-integration.md", include_str!("../docs/claude-integration.md")),
+        ];
+        for (file, md) in docs {
+            for block in toml_blocks(md) {
+                if block.starts_with("inherits =") {
+                    let theme: Result<toml::Table, _> = toml::from_str(block);
+                    assert!(theme.is_ok(), "{file}: theme example: {theme:?}");
+                } else {
+                    let (_, w) = parse(block);
+                    assert!(w.is_empty(), "{file}: {w:?}\n{block}");
+                }
+            }
+        }
     }
 
     #[test]

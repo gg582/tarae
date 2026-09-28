@@ -1,0 +1,94 @@
+# Claude
+
+tarae works with Claude in two ways: it asks Claude itself (edit a selection, or chat in a side panel), and it lets the
+Claude Code you already run in a terminal pane see and edit what's in the editor.
+
+tarae runs the `claude` CLI as a subprocess — there's no HTTP client, SDK, or API key in the editor; it uses your
+Claude Code login as it is. You need [Claude Code](https://claude.com/claude-code) installed and
+logged in.
+
+- [Select → instruct → diff](#select--instruct--diff)
+- [Chat panel](#chat-panel)
+- [Claude Code integration](#claude-code-integration)
+- [Settings](#settings)
+
+## Select → instruct → diff
+
+In a selection-first editor, Claude takes the *action* slot: select, then tell it what to do.
+
+1. Select one or more pieces of text (multiple cursors work — Claude answers for each selection)
+2. `space i` (or `:ask <instruction>`) and type the instruction
+3. The answer streams into a card at the bottom right (thinking/writing, elapsed time) while you keep editing
+4. It opens as an **in-buffer review**: the whole file stays in view with only the changed spots expanded — deleted
+   lines on faint red, added lines on faint green, both in the file's syntax colors, a header line per change
+
+| Key | In the review |
+|---|---|
+| `y` / `n` | Accept / reject this change |
+| `a` | Accept all |
+| `q` | Reject the rest |
+| `tab` | Next change |
+| `j` / `k` | Scroll |
+
+Accepted changes apply as one transaction — one `u` undoes them all. If the original text moved while you waited, it's
+found again and the change still lands in the right place. `:ask-cancel` kills the process, so token generation stops
+too ([screenshot](screenshots/m4-review.png)).
+
+**Speed**: a fresh `claude` process takes 8–10 s to start, so tarae starts one the moment the prompt opens, while you
+type. Enter → diff takes about 3.4 s with the default model.
+
+## Chat panel
+
+![Chat panel — ask with the selection as context; code in answers sits in a well in its language's colors](screenshots/m4-chat.png)
+
+`space l` (or `:chat [question]`) opens a panel on the right; `space L` closes it and `:chat-new` starts over. One
+process lives for the whole conversation, so Claude remembers what came before.
+
+Every message carries **the current file, cursor, selection, and diagnostics** as context — the whole file only the
+first time a version is sent, and just the area around the cursor for files over 60 KB. What was sent shows as chips
+above your message (`main.rs · L13–18 · 3 diagnostics`). Answers render as Markdown, with code blocks in their
+language's colors.
+
+| Key | In the chat |
+|---|---|
+| `enter` | Send |
+| `alt-enter` / `C-j` | New line |
+| `C-c` | Stop the answer (the conversation stays) |
+| `C-r` | Replace the selection with the answer's code — through the same review |
+| `C-y` | Copy the code |
+| `C-l` | New conversation |
+| `esc` | Back to the editor |
+
+An empty conversation shows a short guide and example questions you can pick with `tab`
+([hanji theme](screenshots/m4-chat-hanji.png)).
+
+## Claude Code integration
+
+![Edits from Claude Code in a side pane arrive as a review inside the tarae buffer — y/n/a](screenshots/m5-agent-review.png)
+
+tarae speaks Claude Code's IDE protocol — the same one the VS Code and JetBrains extensions use (MCP over WebSocket) —
+so there's nothing to set up on the Claude Code side.
+
+- `space c` launches `claude` in a zellij or tmux side pane, already connected. A `claude` you already have running
+  connects with `/ide` → tarae. Once connected, the status line shows `◦ claude code`
+  ([screenshot](screenshots/m5-agent-connected.png))
+- Claude sees your current selection (updated as it changes — its input shows `⧉ 1 line selected`), your open files
+  and unsaved edits, and language-server diagnostics, so "fix this error" just works
+- `space C` inserts the selected lines into Claude's input as `@file#L10-20`
+- **Claude's edits come to you**: when it proposes an edit, tarae opens the file in the same in-buffer review as
+  `space i`, headed `Claude Code`. `y`/`n` per change, `a` for all. Accept only part and Claude knows what you kept; it
+  writes the file, and tarae treats that content arriving on disk as saved. A terminal bell gets your attention
+- Security: tarae listens only on `127.0.0.1` and checks a per-session 128-bit token (from `~/.claude/ide/<port>.lock`).
+  Turn it off with `llm.claude-code = false`
+
+## Settings
+
+```toml
+[llm]
+command = "claude"   # a CLI speaking Claude Code's stream-json protocol
+model = "haiku"      # "" = the CLI's default model
+context-lines = 20   # lines around each selection sent along
+claude-code = true   # let Claude Code connect (restart to apply)
+```
+
+All of them, with defaults: [settings reference](reference/settings.md#llm).

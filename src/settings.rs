@@ -361,9 +361,88 @@ pub fn show(cfg: &EditorConfig) -> String {
     out
 }
 
+/// Generated docs (`docs/reference/*.md`) are compared with a fresh render; `TARAE_BLESS=1` rewrites
+/// the file instead. Shared by the settings and keymap reference tests.
+#[cfg(test)]
+pub(crate) fn check_generated(path: &str, fresh: &str, test: &str) {
+    if std::env::var_os("TARAE_BLESS").is_some_and(|v| v == "1") {
+        std::fs::write(path, fresh).unwrap_or_else(|e| panic!("writing {path}: {e}"));
+        return;
+    }
+    let on_disk = std::fs::read_to_string(path).unwrap_or_default();
+    assert!(on_disk == fresh, "{path} is out of date — regenerate it with `TARAE_BLESS=1 cargo test {test}`");
+}
+
+/// Prose for a Markdown table cell — a `|` would end the cell, and `<n>` would be taken for HTML.
+#[cfg(test)]
+pub(crate) fn md_cell(s: &str) -> String {
+    s.replace('|', "\\|").replace('<', "&lt;")
+}
+
+/// Inline code for a table cell; survives backticks inside (`` ` `` → a double-backtick span).
+#[cfg(test)]
+pub(crate) fn md_code(s: &str) -> String {
+    let s = s.replace('|', "\\|");
+    if s.contains('`') { format!("`` {s} ``") } else { format!("`{s}`") }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `docs/reference/settings.md` — one table per config section, straight from `SETTINGS`.
+    fn reference() -> String {
+        let defaults = EditorConfig::default();
+        let mut out = String::from(
+            "<!-- Generated from src/settings.rs — do not edit; regenerate with \
+             `TARAE_BLESS=1 cargo test settings_reference`. -->\n\
+             # Settings reference\n\n\
+             Every setting tarae reads from `~/.config/tarae/config.toml` (or a project `.tarae.toml`).\n\
+             The name is also the `:set` path: `:set editor.scrolloff 8` changes it for this session,\n\
+             `:set!` also writes it to your config file. How files and layers work: \
+             [configuration guide](../configuration.md).\n",
+        );
+        let mut section = None;
+        for s in SETTINGS {
+            let sec = s.path.rsplit_once('.').map(|(sec, _)| sec);
+            if section != Some(sec) {
+                section = Some(sec);
+                let title = sec.map(|t| format!("`[{t}]`")).unwrap_or_else(|| "Top level".into());
+                out.push_str(&format!(
+                    "\n## {title}\n\n| Setting | Type | Default | Description |\n|---|---|---|---|\n"
+                ));
+            }
+            let kind = match &s.kind {
+                Kind::Bool => "bool".to_string(),
+                Kind::Int { min, max } => format!("integer {min}–{max}"),
+                Kind::Enum(opts) => {
+                    opts.iter().map(|o| md_code(&format!("\"{o}\""))).collect::<Vec<_>>().join(" · ")
+                }
+                Kind::Str => "string".into(),
+                Kind::StrList => "list of strings".into(),
+            };
+            let default = md_code(&(s.get)(&defaults).to_string());
+            out.push_str(&format!("| {} | {kind} | {default} | {} |\n", md_code(s.path), md_cell(s.doc)));
+        }
+        out.push_str(
+            "\n## Tables you name yourself\n\n\
+             These are read alongside the settings above; see the [configuration guide](../configuration.md).\n\n\
+             | Table | What it holds |\n|---|---|\n\
+             | `[keys.normal]` · `[keys.select]` · `[keys.insert]` | Key bindings on top of the \
+             [default keymap](keymap.md) |\n\
+             | `[lsp.<name>]` | A language server: `command`, `args` |\n\
+             | `[lang.<language>]` | Per language: `lsp = [\"name\", …]` — which servers to try, in order |\n\
+             | `[[attach]]` | A named debugger attach target: `name`, `lang`, `host`, `port` or `pid`, \
+             `before`, `remote-root`, `program` |\n",
+        );
+        out
+    }
+
+    #[test]
+    fn settings_reference_is_up_to_date() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/docs/reference/settings.md");
+        check_generated(path, &reference(), "settings_reference");
+    }
 
     #[test]
     fn every_setting_roundtrips_its_default() {
