@@ -217,8 +217,36 @@ s = "surround_add"
 r = "surround_replace"
 d = "surround_delete"
 
+# View: `z` once, `Z` stays until Esc
+[normal.z]
+z = "align_view_center"
+c = "align_view_center"
+t = "align_view_top"
+b = "align_view_bottom"
+j = "scroll_down"
+k = "scroll_up"
+C-f = "page_down"
+C-b = "page_up"
+C-d = "half_page_down"
+C-u = "half_page_up"
+
+[normal.Z]
+z = "align_view_center"
+c = "align_view_center"
+t = "align_view_top"
+b = "align_view_bottom"
+j = "scroll_down"
+k = "scroll_up"
+C-f = "page_down"
+C-b = "page_up"
+C-d = "half_page_down"
+C-u = "half_page_up"
+
 [normal.g]
 w = "goto_word"
+t = "goto_window_top"
+c = "goto_window_center"
+b = "goto_window_bottom"
 d = "goto_definition"
 D = "goto_declaration"
 y = "goto_type_definition"

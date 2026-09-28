@@ -159,6 +159,7 @@ pub fn group_name(path: &str) -> Option<&'static str> {
         "space G" => "Debug",
         "space w" | "C-w" => "Window",
         "space x" => "Tests",
+        "z" | "Z" => "View",
         "g" => "Goto",
         "m" => "Match",
         "[" => "Previous",

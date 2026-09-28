@@ -68,6 +68,8 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `x` | `extend_line_below` | Select line (again: extend down) |
 | `X` | `extend_line_up` + `extend_to_line_bounds` | Extend up, then extend selection to line bounds |
 | `y` | `yank` | Yank selection |
+| `z` | … | More keys — see `z` below |
+| `Z` | … | More keys — see `Z` below |
 | `\|` | `shell_pipe` | Pipe selections through a command |
 | `~` | `switch_case` | Switch (toggle) case |
 | `A-!` | `shell_append_output` | Insert a command's output after |
@@ -150,6 +152,8 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | Key | Command | Description |
 |---|---|---|
 | `g a` | `goto_last_accessed_file` | Goto last accessed file |
+| `g b` | `goto_window_bottom` | Cursor to the screen bottom |
+| `g c` | `goto_window_center` | Cursor to mid-screen |
 | `g d` | `goto_definition` | Goto definition (LSP) |
 | `g D` | `goto_declaration` | Goto declaration (LSP) |
 | `g e` | `goto_last_line` | Goto last line |
@@ -161,6 +165,7 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `g p` | `goto_previous_buffer` | Goto previous buffer |
 | `g r` | `goto_reference` | Goto references (LSP) |
 | `g s` | `goto_first_nonwhitespace` | Goto first non-blank in line |
+| `g t` | `goto_window_top` | Cursor to the screen top |
 | `g w` | `goto_word` | Jump to a word by its label |
 | `g y` | `goto_type_definition` | Goto type definition (LSP) |
 
@@ -174,6 +179,36 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `m m` | `match_brackets` | Goto matching bracket |
 | `m r` | `surround_replace` | Surround replace |
 | `m s` | `surround_add` | Surround add |
+
+### `z`
+
+| Key | Command | Description |
+|---|---|---|
+| `z b` | `align_view_bottom` | Cursor line to the bottom |
+| `z c` | `align_view_center` | Cursor line to mid-screen |
+| `z j` | `scroll_down` | Scroll down a line |
+| `z k` | `scroll_up` | Scroll up a line |
+| `z t` | `align_view_top` | Cursor line to the top |
+| `z z` | `align_view_center` | Cursor line to mid-screen |
+| `z C-b` | `page_up` | Move page up |
+| `z C-d` | `half_page_down` | Move half page down |
+| `z C-f` | `page_down` | Move page down |
+| `z C-u` | `half_page_up` | Move half page up |
+
+### `Z`
+
+| Key | Command | Description |
+|---|---|---|
+| `Z b` | `align_view_bottom` | Cursor line to the bottom |
+| `Z c` | `align_view_center` | Cursor line to mid-screen |
+| `Z j` | `scroll_down` | Scroll down a line |
+| `Z k` | `scroll_up` | Scroll up a line |
+| `Z t` | `align_view_top` | Cursor line to the top |
+| `Z z` | `align_view_center` | Cursor line to mid-screen |
+| `Z C-b` | `page_up` | Move page up |
+| `Z C-d` | `half_page_down` | Move half page down |
+| `Z C-f` | `page_down` | Move page down |
+| `Z C-u` | `half_page_up` | Move half page up |
 
 ### `C-w`
 

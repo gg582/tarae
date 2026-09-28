@@ -5245,6 +5245,40 @@ mod tests {
         assert_eq!(ed.doc().selection().primary(), r);
     }
 
+    /// `z` mode places the cursor line (scrolloff still applies) and scrolls without moving the cursor;
+    /// `Z` keeps scrolling until Esc; `gt`/`gb` send the cursor to the screen's edges.
+    #[test]
+    fn view_mode_and_window_moves() {
+        let mut ed = Editor::new(Config::default());
+        ed.config.soft_wrap = "never".into();
+        let text: String = (0..100).map(|i| format!("line {i}\n")).collect();
+        ed.docs[0].text = Rope::from_str(&text);
+        let (w, h) = (30, 20); // 17 text rows, scrolloff 5
+        let keys = |ed: &mut Editor, ks: &str| {
+            for k in ks.split(' ') {
+                ed.handle_key(k.parse().unwrap());
+                render(ed, &mut Vec::new(), w, h).unwrap();
+            }
+        };
+        render(&mut ed, &mut Vec::new(), w, h).unwrap();
+        keys(&mut ed, "5 0 G");
+        let top = |ed: &Editor| ed.docs[0].top;
+        keys(&mut ed, "z t");
+        assert_eq!(top(&ed), 44, "line 49 five rows below the top");
+        keys(&mut ed, "z b");
+        assert_eq!(top(&ed), 38, "line 49 five rows above the bottom");
+        keys(&mut ed, "z z");
+        assert_eq!(top(&ed), 41);
+        keys(&mut ed, "z j");
+        assert_eq!((top(&ed), ed.cursor_line()), (42, 49), "the view moves, not the cursor");
+        keys(&mut ed, "Z j j esc j");
+        assert_eq!((top(&ed), ed.cursor_line()), (44, 50), "Z stays for j j; after Esc, j moves the cursor");
+        keys(&mut ed, "g t");
+        assert_eq!(ed.cursor_line(), 49, "top of the screen + scrolloff");
+        keys(&mut ed, "g b");
+        assert_eq!(ed.cursor_line(), 55);
+    }
+
     #[test]
     fn osc11_replies() {
         let dark = parse_osc11(b"\x1b]11;rgb:1010/1212/1717\x1b\\\x1b[?62;22c").unwrap();

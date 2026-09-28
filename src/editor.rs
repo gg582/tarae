@@ -1480,8 +1480,15 @@ impl Editor {
         let pending = std::mem::take(&mut self.pending);
         let count = self.count.take();
         self.last_trigger_len = pending.len();
+        // Sticky view mode: `Z` stays open for the next key (Esc, or any key it doesn't have, leaves)
+        let sticky = cmds.is_some() && pending.len() > 1 && pending[0].plain_char() == Some('Z');
         match (cmds, pending.split_last()) {
-            (Some(cmds), _) => self.run(&cmds, count),
+            (Some(cmds), _) => {
+                self.run(&cmds, count);
+                if sticky && self.mode == Mode::Normal {
+                    self.pending = vec![pending[0]];
+                }
+            }
             // Unmapped keys in insert mode = input. A sequence that broke off (`jx` under `j k`): the keys
             // before are text, the last goes through the keymap again (`j<esc>` = "j", then leave insert).
             (None, Some((&last, before))) if self.mode == Mode::Insert => {

@@ -54,6 +54,7 @@ mod theme;
 mod transaction;
 mod typed;
 mod undofile;
+mod viewalign;
 mod wrap;
 mod ws;
 

@@ -144,6 +144,14 @@ commands! {
         git_reset_hunk => "Undo this change",
         git_stage_hunk => "Stage this change",
         git_toggle_blame => "Blame on this line (on/off)",
+        align_view_center => "Cursor line to mid-screen",
+        align_view_top => "Cursor line to the top",
+        align_view_bottom => "Cursor line to the bottom",
+        scroll_down => "Scroll down a line",
+        scroll_up => "Scroll up a line",
+        goto_window_top => "Cursor to the screen top",
+        goto_window_center => "Cursor to mid-screen",
+        goto_window_bottom => "Cursor to the screen bottom",
         goto_word => "Jump to a word by its label",
         extend_to_word => "Extend selection to a labelled word",
         expand_selection => "Grow selection to the enclosing syntax node",
@@ -930,6 +938,38 @@ fn textobject(cx: &mut Context, ch: char, kind: to::Kind) {
         };
         cx.editor.set_status(format!("m{ch}: {what}"));
     }
+}
+
+// ── View (body in viewalign.rs) ──────────────────────────────────────────
+
+fn align_view_center(cx: &mut Context) {
+    cx.editor.align_view(crate::viewalign::Place::Center)
+}
+fn align_view_top(cx: &mut Context) {
+    cx.editor.align_view(crate::viewalign::Place::Top)
+}
+fn align_view_bottom(cx: &mut Context) {
+    cx.editor.align_view(crate::viewalign::Place::Bottom)
+}
+fn scroll_down(cx: &mut Context) {
+    let (n, extend) = (cx.count() as isize, is_select(cx));
+    cx.editor.scroll_view(n, extend)
+}
+fn scroll_up(cx: &mut Context) {
+    let (n, extend) = (cx.count() as isize, is_select(cx));
+    cx.editor.scroll_view(-n, extend)
+}
+fn goto_window_top(cx: &mut Context) {
+    let extend = is_select(cx);
+    cx.editor.goto_window(crate::viewalign::Place::Top, extend)
+}
+fn goto_window_center(cx: &mut Context) {
+    let extend = is_select(cx);
+    cx.editor.goto_window(crate::viewalign::Place::Center, extend)
+}
+fn goto_window_bottom(cx: &mut Context) {
+    let extend = is_select(cx);
+    cx.editor.goto_window(crate::viewalign::Place::Bottom, extend)
 }
 
 // ── git (body in gitmenu.rs) ─────────────────────────────────────────────
