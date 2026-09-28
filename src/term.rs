@@ -1052,6 +1052,8 @@ struct Ui {
     /// Diagnostics [_, error, warning, info, hint]: underline style, sign (●) color
     diag: [Style; 5],
     sign: [Style; 5],
+    /// Set while drawing the focused pane: the cursor line's diagnostics all fit at its end (no card needed).
+    cursor_diags_shown: std::cell::Cell<bool>,
 }
 
 impl Ui {
@@ -1106,6 +1108,7 @@ impl Ui {
             diag: ["", "error", "warning", "info", "hint"].map(|k| get(&format!("diagnostic.{k}"))),
             sign: ["", "error", "warning", "info", "hint"]
                 .map(|k| Style { fg: get(k).fg, ..Style::default() }),
+            cursor_diags_shown: std::cell::Cell::new(false),
             base,
             selection,
             cursor,
@@ -1228,6 +1231,9 @@ fn draw(
     if let (Some(c), Some(at)) = (&editor.completion, text_cursor) {
         draw_completion(c, at, ui, editor, lay, out)?;
     }
+    if let Some(at) = text_cursor {
+        draw_diagnostic_card(editor, at, ui, lay, out)?;
+    }
     draw_toasts(editor, ui, lay, out)?;
     if let Some(card) = offer {
         card.draw(editor, ui, out)?;
@@ -1274,6 +1280,8 @@ fn draw_text(
     lay: &Layout,
     out: &mut impl Write,
 ) -> io::Result<Option<(u16, u16)>> {
+    // The frame's flag, not the copy's below
+    let cursor_diags_shown = &ui.cursor_diags_shown;
     // Unfocused panes are toned down a step (dim attribute — set on the line bg, all text inherits it)
     let ui = &Ui {
         base: Style { dim: !focused, ..ui.base },
@@ -1309,7 +1317,8 @@ fn draw_text(
         doc.lsp.diagnostics.iter().filter(|d| d.to >= vis_from && d.from <= vis_to).collect();
     let mut line_severity = vec![0u8; span];
     // End-of-line message (Error Lens): 1st line of the most severe diagnostic starting on that line + N more
-    let mut line_message: Vec<Option<(u8, &str, usize)>> = vec![None; span];
+    // + whether that line is all of its message
+    let mut line_message: Vec<Option<(u8, &str, usize, bool)>> = vec![None; span];
     if editor.config.inline_diagnostics {
         for d in &visible_diags {
             let Some(slot) = mv::line_of(text, d.from).checked_sub(top).and_then(|r| line_message.get_mut(r))
@@ -1317,10 +1326,12 @@ fn draw_text(
                 continue;
             };
             let msg = d.message.lines().next().unwrap_or_default();
+            let whole =
+                d.message.lines().filter(|l| !l.trim().is_empty() && !lint_origin(l)).nth(1).is_none();
             *slot = match *slot {
-                None => Some((d.severity, msg, 0)),
-                Some((s, _, n)) if d.severity < s => Some((d.severity, msg, n + 1)),
-                Some((s, m, n)) => Some((s, m, n + 1)),
+                None => Some((d.severity, msg, 0, whole)),
+                Some((s, _, n, _)) if d.severity < s => Some((d.severity, msg, n + 1, whole)),
+                Some((s, m, n, w)) => Some((s, m, n + 1, w)),
             };
         }
     }
@@ -1334,7 +1345,7 @@ fn draw_text(
             }
             if let Some(row) = l.checked_sub(top).filter(|&row| row < span) {
                 let msg = c.message.iter().map(|m| m.trim()).find(|m| !m.is_empty()).unwrap_or("test failed");
-                line_message[row] = Some((1, msg, 0));
+                line_message[row] = Some((1, msg, 0, false));
                 test_fail[row] = true;
             }
         }
@@ -1570,7 +1581,7 @@ fn draw_text(
         } else {
             // Error/warning lines get a very faint wash of that color — so problems stand out when skimming
             match line_message_here {
-                Some((sev @ 1..=2, _, _)) => {
+                Some((sev @ 1..=2, ..)) => {
                     Style { bg: blend(ui.sign[sev as usize].fg, ui.tint, 0.07).or(ui.base.bg), ..ui.base }
                 }
                 _ => ui.base,
@@ -1812,7 +1823,7 @@ fn draw_text(
             }
         }
         // Line-end diagnostic: `  ● message +2` — symbol in severity color, text a tone lower. …if no room
-        if let Some((sev, msg, more)) = line_message_here
+        if let Some((sev, msg, more, whole)) = line_message_here
             && !clipped
         {
             let used = col.saturating_sub(left) + shift + 1 + extra_used;
@@ -1828,6 +1839,9 @@ fn draw_text(
                 };
                 let more = if more > 0 { format!("  +{more}") } else { String::new() };
                 let body = fit_ellipsis(msg, room.saturating_sub(2 + more.width()));
+                if focused && line == cur_line && whole && more.is_empty() && body == msg {
+                    cursor_diags_shown.set(true);
+                }
                 apply(out, line_base)?;
                 queue!(out, Print("   "))?;
                 apply(out, Style { fg: color, ..line_base })?;
@@ -4392,7 +4406,22 @@ fn fit_ellipsis(s: &str, width: usize) -> String {
 /// Floating docs (hover) — below the cursor (above if no room), text's first cell at the cursor column.
 fn draw_popup(
     lines: &[crate::markdown::Line],
+    at: (u16, u16),
+    ui: &Ui,
+    editor: &Editor,
+    lay: &Layout,
+    out: &mut impl Write,
+) -> io::Result<()> {
+    draw_float(lines, at, editor.popup_scroll, 20, ui, editor, lay, out)
+}
+
+/// Lines in a doc box by the cursor (hover, diagnostic card): at most `cap` rows, scrolled `scroll` rows.
+#[allow(clippy::too_many_arguments)]
+fn draw_float(
+    lines: &[crate::markdown::Line],
     (cx, cy): (u16, u16),
+    scroll: usize,
+    cap: usize,
     ui: &Ui,
     editor: &Editor,
     lay: &Layout,
@@ -4404,18 +4433,18 @@ fn draw_popup(
     // Never cover the cursor line: below if it fits, else above; if neither fits, the larger side, truncated
     let (top, bottom) = (lay.text_top as usize, lay.text_top as usize + lay.text_rows);
     let (below, above) = (bottom.saturating_sub(cy as usize + 1), (cy as usize).saturating_sub(top));
-    let want = rows.len().min(20) + 2;
+    let want = rows.len().min(cap) + 2;
     let down = want <= below || (want > above && below >= above);
     let room = if down { below } else { above };
     if room < 3 {
         return Ok(());
     }
-    let max_rows = (room - 2).min(20);
+    let max_rows = (room - 2).min(cap);
     let h = rows.len().min(max_rows) + 2;
     let y0 = if down { cy as usize + 1 } else { cy as usize - h };
     let x0 = (cx as usize).saturating_sub(2).min(lay.edit_w.saturating_sub(inner + 4));
     // Skip as far as scrolled, but stop at the last page (so more C-d doesn't give an empty box)
-    let skip = editor.popup_scroll.min(rows.len().saturating_sub(max_rows));
+    let skip = scroll.min(rows.len().saturating_sub(max_rows));
     draw_doc_box(&rows[skip..], (x0, y0), inner, max_rows, ui, editor, out)
 }
 
@@ -4485,6 +4514,147 @@ fn draw_doc_box(
             Print(format!("╰{}{more}╯", "─".repeat((inner + 2).saturating_sub(more.width()))))
         )
     }
+}
+
+/// The cursor line's diagnostics in full — the line end shows only a first line, cut to fit. A card below
+/// the cursor, only when something there didn't fit and nothing else floats (normal/select mode).
+fn draw_diagnostic_card(
+    editor: &Editor,
+    at: (u16, u16),
+    ui: &Ui,
+    lay: &Layout,
+    out: &mut impl Write,
+) -> io::Result<()> {
+    let busy = editor.mode == Mode::Insert
+        || editor.popup.is_some()
+        || editor.completion.is_some()
+        || editor.signature.is_some()
+        || editor.picker.is_some()
+        || editor.prompt.is_some()
+        || !editor.pending.is_empty()
+        || editor.chat.as_ref().is_some_and(|c| c.focused);
+    if !editor.config.cursor_diagnostics
+        || busy
+        || ui.cursor_diags_shown.get()
+        || editor.diag_card_hidden == Some((editor.doc().id, editor.cursor_line()))
+    {
+        return Ok(());
+    }
+    let lines = diagnostic_lines(&cursor_line_diagnostics(editor), editor, ui);
+    if lines.is_empty() {
+        return Ok(());
+    }
+    draw_float(&lines, at, 0, 12, ui, editor, lay, out)
+}
+
+/// Diagnostics starting on the cursor line or covering the cursor — most severe first.
+fn cursor_line_diagnostics(editor: &Editor) -> Vec<&crate::lsp::Diagnostic> {
+    let doc = editor.doc();
+    let head = doc.selection().primary().cursor(&doc.text);
+    let line = mv::line_of(&doc.text, head);
+    let mut list: Vec<_> = doc
+        .lsp
+        .diagnostics
+        .iter()
+        .filter(|d| mv::line_of(&doc.text, d.from) == line || (d.from <= head && head <= d.to))
+        .collect();
+    list.sort_by_key(|d| (d.severity, d.from));
+    list
+}
+
+/// Card text: per diagnostic `● first line  source code`, then the rest of its lines; `code` in the
+/// buffer's syntax colors. A blank row between diagnostics.
+fn diagnostic_lines(
+    diags: &[&crate::lsp::Diagnostic],
+    editor: &Editor,
+    ui: &Ui,
+) -> Vec<crate::markdown::Line> {
+    use crate::markdown::{Line, Span};
+    let lang = editor.doc().syntax.as_ref().map(|s| s.lang.name.clone());
+    let faint = Style { fg: ui.linenr.fg, ..Style::default() };
+    let mut out = Vec::new();
+    let mut last_source = None;
+    for (i, d) in diags.iter().enumerate() {
+        if i > 0 {
+            out.push(Line::Blank);
+        }
+        let glyph = match d.severity {
+            2 => "▲",
+            1 | 3 => "●",
+            _ => "·",
+        };
+        let mut lines =
+            d.message.lines().map(str::trim_end).filter(|l| !l.trim().is_empty() && !lint_origin(l));
+        let color = Style { fg: ui.sign[d.severity.min(4) as usize].fg, ..Style::default() };
+        let mut spans = vec![Span { text: format!("{glyph} "), style: color }];
+        // Errors/warnings lead in bold; info/hints (often "expected due to this") step back
+        let head_style = if d.severity <= 2 {
+            Style { bold: true, ..Style::default() }
+        } else {
+            Style { fg: ui.virt.fg, ..Style::default() }
+        };
+        let head = lines.next().unwrap_or_default();
+        spans.extend(message_spans(head, head_style, lang.as_deref(), editor));
+        // Source only when it changes (a hint right after its error repeats it)
+        let source = diagnostic_source(&d.raw);
+        if let Some(src) = source.as_ref().filter(|&s| last_source.as_ref() != Some(s)) {
+            spans.push(Span { text: format!("  {src}"), style: faint });
+        }
+        last_source = source;
+        out.push(Line::Text { spans, indent: 2 });
+        for l in lines {
+            let mut spans = vec![Span { text: "  ".into(), style: Style::default() }];
+            spans.extend(message_spans(l, Style::default(), lang.as_deref(), editor));
+            out.push(Line::Text { spans, indent: 2 });
+        }
+    }
+    out
+}
+
+/// Message text → spans: `code` (backticks dropped) colored as code of `lang`, the rest in `base`.
+fn message_spans(text: &str, base: Style, lang: Option<&str>, editor: &Editor) -> Vec<crate::markdown::Span> {
+    use crate::markdown::{Line, Span};
+    let t = &editor.theme;
+    let raw = t.try_get("markup.raw.inline").or_else(|| t.try_get("markup.raw")).unwrap_or_default();
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(open) = rest.find('`') {
+        let Some(len) = rest[open + 1..].find('`') else { break };
+        if open > 0 {
+            out.push(Span { text: rest[..open].to_string(), style: base });
+        }
+        let code = &rest[open + 1..open + 1 + len];
+        // Inline-code color underneath, syntax colors on top (unparsed bits still read as code)
+        match crate::markdown::code_lines(code, lang, t).into_iter().next() {
+            Some(Line::Code(spans)) => {
+                out.extend(spans.into_iter().map(|sp| Span { style: raw.patch(sp.style), ..sp }))
+            }
+            _ => out.push(Span { text: code.to_string(), style: raw }),
+        }
+        rest = &rest[open + 1 + len + 1..];
+    }
+    if !rest.is_empty() {
+        out.push(Span { text: rest.to_string(), style: base });
+    }
+    out
+}
+
+/// rustc's "`#[warn(unused_variables)]` (part of …) on by default" — says where a lint comes from, not
+/// what's wrong. Left out of the card.
+fn lint_origin(line: &str) -> bool {
+    let l = line.trim();
+    l.starts_with("`#[") && l.ends_with("on by default")
+}
+
+/// `rustc E0308` — who reported it and its code, if the server says.
+fn diagnostic_source(raw: &serde_json::Value) -> Option<String> {
+    let code = match &raw["code"] {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    };
+    let parts: Vec<String> = raw["source"].as_str().map(str::to_string).into_iter().chain(code).collect();
+    (!parts.is_empty()).then(|| parts.join(" "))
 }
 
 fn cursor_diagnostic(editor: &Editor) -> Option<&crate::lsp::Diagnostic> {

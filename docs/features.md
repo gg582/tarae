@@ -154,7 +154,9 @@ cursor or document moved on are dropped.
 
 - **Diagnostics** — `●` in the gutter, underlines (curly where the terminal is known to support them), the message at
   the end of the line with a faint wash of its color (`editor.inline-diagnostics`,
-  [screenshot](screenshots/ux-error-lens.png)), `]d` `[d`, and a `space d` list
+  [screenshot](screenshots/ux-error-lens.png)), `]d` `[d`, and a `space d` list. When the line end can't hold it all
+  (a second line with the details, a long code line, more than one), putting the cursor on the line shows every
+  message in full in a card, with `code` in syntax colors (`editor.cursor-diagnostics`; Esc hides it for that line)
 - **Completion** — pops up as you type, including after trigger characters like `.`, and filters locally as you keep
   typing. Snippets expand with the cursor at the first stop, auto-imports come along, and the selected item's docs show
   alongside. `C-x` asks by hand ([screenshot](screenshots/m3-completion.png))

@@ -244,6 +244,8 @@ pub struct Editor {
     pub offer_seq: u64,
     /// Whether to show offers (off in tests — so they don't swallow y/n keys).
     pub offer_popups: bool,
+    /// Diagnostic card closed with Esc on this line (doc, line) — back once the cursor leaves the line.
+    pub diag_card_hidden: Option<(DocId, usize)>,
     cmd_loading: std::collections::HashSet<std::path::PathBuf>,
     /// Debugger watch expressions (evaluated at every stop — survive session changes).
     pub watches: Vec<String>,
@@ -342,6 +344,7 @@ impl Editor {
             offers: Vec::new(),
             offer_seq: 0,
             offer_popups: !cfg!(test),
+            diag_card_hidden: None,
             cmd_loading: Default::default(),
             watches: Vec::new(),
             dap_generation: 0,
@@ -1237,6 +1240,9 @@ impl Editor {
         let was_insert = self.mode == Mode::Insert;
         self.handle_key_inner(key);
         self.track_doc_switch();
+        if self.diag_card_hidden.is_some_and(|h| h != (self.doc().id, self.cursor_line())) {
+            self.diag_card_hidden = None;
+        }
         let typed = key.plain_char();
         if was_insert || self.completion.is_some() {
             match key.code {
@@ -1257,6 +1263,9 @@ impl Editor {
         // Esc in normal mode = clear search highlight (and still does its other work)
         if key.code == Code::Esc && self.mode == Mode::Normal && self.prompt.is_none() {
             self.search_hl = false;
+            if self.popup.is_none() {
+                self.diag_card_hidden = Some((self.doc().id, self.cursor_line()));
+            }
         }
         // Floating text: C-d/C-u scroll it, other keys close it (esc only closes).
         if let Some(lines) = &self.popup

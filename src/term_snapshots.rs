@@ -429,6 +429,74 @@ fn snapshot_statusline_widths() {
     }
 }
 
+/// Diagnostics on the cursor line: an error whose detail is on its second line (+ a hint) → the card below
+/// the cursor with all of it, `code` in syntax colors.
+fn diagnostic_card_shot() -> Shot {
+    let mut s = Shot::new(90, 24);
+    s.file("src/demo.rs", DEMO_RS);
+    let at = DEMO_RS.find("word_counts(text);").unwrap();
+    let diag = |from, severity, message: &str, raw| crate::lsp::Diagnostic {
+        from,
+        to: from + 11,
+        severity,
+        message: message.into(),
+        raw,
+    };
+    s.ed.doc_mut().lsp.diagnostics = vec![
+        diag(
+            at,
+            1,
+            "mismatched types\nexpected `HashMap<&str, u32>`, found `HashMap<&str, usize>`",
+            json!({ "source": "rustc", "code": "E0308" }),
+        ),
+        diag(at - 9, 4, "expected due to this", json!({ "source": "rustc", "code": "E0308" })),
+    ];
+    s.keys("16G");
+    s
+}
+
+#[test]
+fn snapshot_diagnostic_card() {
+    diagnostic_card_shot().check("diagnostic_card");
+}
+
+/// The card only when the line end can't show it all · not in insert mode · Esc hides it until the
+/// cursor leaves the line.
+#[test]
+fn diagnostic_card_shows_only_what_the_line_end_cannot() {
+    let mut s = diagnostic_card_shot();
+    let shown = |s: &mut Shot| {
+        let bytes = s.frame();
+        snapshot(&s.ed, "card", &bytes, s.w, s.h).contains("found HashMap")
+    };
+    assert!(shown(&mut s));
+    s.keys("<esc>");
+    assert!(!shown(&mut s), "Esc hides it");
+    s.keys("l");
+    assert!(!shown(&mut s), "still hidden on the same line");
+    s.keys("jk");
+    assert!(shown(&mut s), "back after leaving the line");
+    s.keys("i");
+    assert!(!shown(&mut s), "not while typing");
+    s.keys("<esc>");
+    // One short single-line message fits at the line end — no card
+    let at = DEMO_RS.find("word_counts(text);").unwrap();
+    s.ed.doc_mut().lsp.diagnostics = vec![crate::lsp::Diagnostic {
+        from: at,
+        to: at + 11,
+        severity: 2,
+        message: "unused result".into(),
+        raw: json!({ "source": "rustc" }),
+    }];
+    let bytes = s.frame();
+    let t = snapshot(&s.ed, "card", &bytes, s.w, s.h);
+    assert!(!t.contains("  rustc"), "{}", &t[..t.find("## bg").unwrap()]);
+    // The same message on a line too long for it → card
+    s.ed.config.inline_diagnostics = false;
+    let bytes = s.frame();
+    assert!(snapshot(&s.ed, "card", &bytes, s.w, s.h).contains("  rustc"));
+}
+
 /// Start screen (no file).
 #[test]
 fn snapshot_welcome() {

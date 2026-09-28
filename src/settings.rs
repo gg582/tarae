@@ -184,6 +184,13 @@ pub static SETTINGS: &[Setting] = &[
         set: |c, v| c.inline_diagnostics = b(v),
     },
     Setting {
+        path: "editor.cursor-diagnostics",
+        kind: Kind::Bool,
+        doc: "On a line whose diagnostics don't fit at its end, show them in full in a card by the cursor (Esc hides it)",
+        get: |c| Value::from(c.cursor_diagnostics),
+        set: |c, v| c.cursor_diagnostics = b(v),
+    },
+    Setting {
         path: "editor.indent-guides",
         kind: Kind::Bool,
         doc: "Faint vertical guides in leading indentation (theme: ui.virtual.indent-guide)",
