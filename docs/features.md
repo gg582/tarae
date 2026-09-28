@@ -202,6 +202,9 @@ cursor or document moved on are dropped.
 - **Jump list** per pane — `C-o` back · `C-i`/Tab forward · `C-s` saves a spot · `space j` lists them (with a preview;
   picking one keeps where you were, so `Tab` comes back). Go-tos, searches, `gg`/`ge` and
   switching files record where you were, and a saved spot follows later edits · `ga` = the file shown before this one
+- `space h` selects every use of the symbol under the cursor in this file (the server's, not text matches) — then `c`
+  edits them all · `space D` lists diagnostics in every file the server reported, open or not, errors first ·
+  `:lsp-restart`, `:lsp-stop`
 - **Symbols** — `space s` in this file, `space S` across the workspace, with kind glyphs in the same colors as code
   ([file](screenshots/ux-symbols.png) · [workspace](screenshots/ux-workspace-symbols.png))
 - Server progress (indexing and the like) shows in the status line

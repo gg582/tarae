@@ -237,9 +237,11 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `space c` | `claude_code` | Open Claude Code beside (connected) |
 | `space C` | `claude_code_mention` | Send selection to Claude Code (@) |
 | `space d` | `diagnostics_picker` | Diagnostics |
+| `space D` | `workspace_diagnostics_picker` | Diagnostics in every file |
 | `space f` | `file_picker` | Open file picker |
 | `space g` | … | More keys — see `space g` below |
 | `space G` | … | More keys — see `space G` below |
+| `space h` | `select_references_to_symbol_under_cursor` | Select this symbol's uses |
 | `space i` | `llm_ask` | Ask Claude to edit selection |
 | `space j` | `jumplist_picker` | Jump list |
 | `space k` | `hover` | Show docs under cursor |
@@ -390,6 +392,8 @@ Type `:` in normal mode. `Tab` completes command names and their arguments (path
 | `:config-open` |  | Open your config file |
 | `:config-reload` |  | Reload your config file |
 | `:config-show` |  | Show every setting with its value |
+| `:lsp-restart` |  | Restart this file's language server |
+| `:lsp-stop` |  | Stop this file's language server |
 | `:format` | `:fmt` | Format the file (language server) |
 | `:set-language` | `:lang` | Set this buffer's language |
 | `:grammar-install` |  | Fetch and build syntax grammars (this file's language, a name, or all) |

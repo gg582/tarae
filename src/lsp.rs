@@ -449,6 +449,7 @@ impl Client {
                         "implementation": { "linkSupport": true },
                         "documentSymbol": { "hierarchicalDocumentSymbolSupport": true },
                         "references": {},
+                        "documentHighlight": {},
                         // Without this the server may send only Commands — rust-analyzer sends none at all.
                         "codeAction": {
                             "codeActionLiteralSupport": { "codeActionKind": { "valueSet": [

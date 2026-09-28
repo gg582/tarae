@@ -10,23 +10,23 @@
 07   6     let mut counts = HashMap::new();
 08   7     for word in text.split_whitespace() {
 09   8     │   *counts.entry(word).or_insert(0) += 1;
-10   9     }
-11  10     counts            ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
-12  11 }                       space
-13  12
-14  13 fn main() {             '  Reopen the last picker           k  Show docs under cursor
-15  14     let text = "the qu  /  Search in project                l  Chat with Claude
-16  15     let counts = word_  ?  Find a command                   L  Close chat
-17  16     println!("{} disti  a  Code actions                     p  Paste clipboard after
-18  17 }                       b  Open buffer picker               P  Paste clipboard before
-19                             c  Open Claude Code beside (conn…   r  Rename symbol
-20                             C  Send selection to Claude Code…   s  Symbols in this file
-21                             d  Diagnostics                      S  Symbols in the workspace
+10   9     }                 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+11  10     counts              space
+12  11 }
+13  12                         '  Reopen the last picker           j  Jump list
+14  13 fn main() {             /  Search in project                k  Show docs under cursor
+15  14     let text = "the qu  ?  Find a command                   l  Chat with Claude
+16  15     let counts = word_  a  Code actions                     L  Close chat
+17  16     println!("{} disti  b  Open buffer picker               p  Paste clipboard after
+18  17 }                       c  Open Claude Code beside (conn…   P  Paste clipboard before
+19                             C  Send selection to Claude Code…   r  Rename symbol
+20                             d  Diagnostics                      s  Symbols in this file
+21                             D  Diagnostics in every file        S  Symbols in the workspace
 22                             f  Open file picker                 t  Choose a theme (live preview)
 23                             g  Git …                            w  Window …
 24                             G  Debug …                          x  Tests …
-25                             i  Ask Claude to edit selection     y  Copy to clipboard
-26                             j  Jump list
+25                             h  Select this symbol's uses        y  Copy to clipboard
+26                             i  Ask Claude to edit selection
 27                           ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
 28  ▐ NORMAL ▌                                                                   rust   utf-8 LF   1:1
 29                                                                                                space
@@ -42,7 +42,7 @@
 08
 09
 10
-11
+11                           ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
 12                           ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
 13                           ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
 14                           ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
@@ -73,9 +73,9 @@
 08   f
 09   f
 10   f
-11  ff
-12  ff                         BBBBB
-13  ff
+11  ff                         BBBBB
+12  ff
+13  ff                         A                                   A
 14  ff                         A                                   A
 15  ff                gggg gg  A                                   A
 16  ff                         A                                   A

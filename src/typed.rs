@@ -135,6 +135,12 @@ pub fn execute(editor: &mut Editor, line: &str) -> Result<(), String> {
             });
             Ok(())
         }
+        "lsp-restart" => editor.lsp_restart(),
+        "lsp-stop" => {
+            let name = editor.lsp_stop()?;
+            editor.set_status(format!("{name} stopped"));
+            Ok(())
+        }
         "format" | "fmt" => {
             let tab = editor.config.tab_width;
             let extra = serde_json::json!({ "options": { "tabSize": tab, "insertSpaces": true } });

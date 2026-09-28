@@ -11,7 +11,7 @@ use crate::editor::Editor;
 use crate::lsp::{self, Client, ClientId, Diagnostic, Encoding};
 use crate::movement as mv;
 use crate::picker::{Action, Item, Picker};
-use crate::selection::Selection;
+use crate::selection::{Range, Selection};
 
 #[derive(Default)]
 pub struct LspState {
@@ -34,6 +34,8 @@ pub struct LspState {
     completion_gen: u64,
     /// Go-to target in a file still loading in the background — applied once it has loaded.
     jump_after_load: Option<(DocId, Value, Encoding)>,
+    /// Diagnostics for files that aren't open (`space D`): path → (severity, line, column, message).
+    pub(crate) elsewhere: HashMap<std::path::PathBuf, Vec<(u8, usize, usize, String)>>,
 }
 
 /// What applying one code action would change (picker's right pane).
@@ -98,6 +100,8 @@ const INLAY_DEBOUNCE_MS: u64 = 120;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
     Goto(Goto),
+    /// `space h` — this symbol's uses in the file become the selections.
+    Highlights,
     Hover,
     CodeAction,
     ResolveAction,
@@ -362,6 +366,29 @@ impl Editor {
                 // Doc paths are canonical — only a URI matching no open doc as-is is resolved on disk
                 let open = |p: &std::path::Path| self.docs.iter().position(|d| d.path.as_deref() == Some(p));
                 let Some(i) = open(&path).or_else(|| open(&std::fs::canonicalize(&path).ok()?)) else {
+                    // Not open — kept for `space D`
+                    let list: Vec<(u8, usize, usize, String)> = params["diagnostics"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(|d| {
+                            let at = &d["range"]["start"];
+                            let n = |k: &str| at[k].as_u64().unwrap_or(0) as usize;
+                            let sev = d["severity"].as_u64().unwrap_or(1).clamp(1, 4) as u8;
+                            (
+                                sev,
+                                n("line"),
+                                n("character"),
+                                d["message"].as_str().unwrap_or_default().trim().to_string(),
+                            )
+                        })
+                        .collect();
+                    let path = std::fs::canonicalize(&path).unwrap_or(path);
+                    if list.is_empty() {
+                        self.lsp.elsewhere.remove(&path);
+                    } else {
+                        self.lsp.elsewhere.insert(path, list);
+                    }
                     return;
                 };
                 let doc = &mut self.docs[i];
@@ -456,7 +483,8 @@ impl Editor {
     fn on_response(&mut self, cid: ClientId, p: Pending, result: &Value) {
         // Late response: drop if the doc changed (edit kinds) or the cursor moved (position kinds).
         let Some(doc) = self.docs.iter().find(|d| d.id == p.doc) else { return };
-        let cursor_bound = matches!(p.kind, Kind::Goto(_) | Kind::Hover | Kind::CodeAction);
+        let cursor_bound =
+            matches!(p.kind, Kind::Goto(_) | Kind::Highlights | Kind::Hover | Kind::CodeAction);
         let version_bound = !matches!(
             p.kind,
             Kind::ResolvePreview { .. }
@@ -566,6 +594,26 @@ impl Editor {
             }
             Kind::DocumentSymbols => self.on_document_symbols(p.doc, result),
             Kind::WorkspaceSymbols => self.on_workspace_symbols(result),
+            Kind::Highlights => {
+                let doc = self.doc();
+                let ranges: Vec<Range> = result
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|h| {
+                        let from = lsp::from_position(&doc.text, &h["range"]["start"], enc)?;
+                        let to = lsp::from_position(&doc.text, &h["range"]["end"], enc)?;
+                        (to > from).then(|| Range::new(from, to))
+                    })
+                    .collect();
+                if ranges.is_empty() {
+                    return self.note("no other uses of this symbol here");
+                }
+                let n = ranges.len();
+                let primary = ranges.iter().position(|r| r.from() <= p.head && p.head < r.to()).unwrap_or(0);
+                self.doc_mut().set_selection(Selection::new(ranges, primary));
+                self.note(format!("{n} uses selected"));
+            }
             Kind::Goto(goto) => {
                 // jdtls: library/JDK classes come as jdt:// URIs — source into a read-only buffer (java.rs)
                 if goto != Goto::References
@@ -1408,6 +1456,38 @@ impl Editor {
         }
     }
 
+    /// `space h` — every use of the symbol under the cursor in this file, as selections (documentHighlight).
+    pub fn select_symbol_uses(&mut self) {
+        let Some(cid) = self.ready_client() else { return };
+        let Some(c) = self.client(cid) else { return };
+        let cap = &c.caps["documentHighlightProvider"];
+        if cap.is_null() || *cap == json!(false) {
+            let name = c.name.clone();
+            return self.set_status(format!("{name} can't find a symbol's uses"));
+        }
+        self.lsp_request(Kind::Highlights, "textDocument/documentHighlight", json!({}));
+    }
+
+    /// `:lsp-stop` — this file's language server stops (files using it lose diagnostics until it's back).
+    pub fn lsp_stop(&mut self) -> Result<String, String> {
+        let cid = self.doc().lsp.client.ok_or("no language server for this file")?;
+        let name = self.client(cid).map(|c| c.name.clone()).unwrap_or_default();
+        self.lsp_stopped(cid);
+        Ok(name)
+    }
+
+    /// `:lsp-restart` — stop this file's server and start it again for every file that used it.
+    pub fn lsp_restart(&mut self) -> Result<(), String> {
+        let cid = self.doc().lsp.client.ok_or("no language server for this file")?;
+        let docs: Vec<DocId> = self.docs.iter().filter(|d| d.lsp.client == Some(cid)).map(|d| d.id).collect();
+        let name = self.lsp_stop()?;
+        for id in docs {
+            self.attach_lsp(id);
+        }
+        self.set_success(format!("{name} restarted"));
+        Ok(())
+    }
+
     /// `g d`·`g D`·`g y`·`g i`·`g r` — asks only a server that says it can answer.
     pub fn goto_location(&mut self, goto: Goto) {
         let Some(cid) = self.ready_client() else { return };
@@ -1473,21 +1553,55 @@ impl Editor {
             .map(|d| {
                 let line = mv::line_of(&doc.text, d.from);
                 let col = d.from - mv::line_start(&doc.text, line);
-                let sev = ["error", "error", "warning", "info", "hint"][d.severity as usize];
                 Item {
                     label: format!(
-                        "{}:{} {sev}: {}",
+                        "{}:{}  {}",
                         line + 1,
                         col + 1,
                         d.message.lines().next().unwrap_or_default()
                     ),
                     action: Action::Goto { path: path.clone(), line, col },
                     hint: String::new(),
-                    glyph: None,
+                    glyph: Some(severity_glyph(d.severity)),
                 }
             })
             .collect();
         self.open_picker(Picker::new("diagnostics", items, false), None);
+    }
+
+    /// `space D` — diagnostics in every file the servers reported: open ones (live), then the rest; errors
+    /// first.
+    pub fn workspace_diagnostics_picker(&mut self) {
+        let root = std::env::current_dir().unwrap_or_default();
+        let rel = |p: &std::path::Path| p.strip_prefix(&root).unwrap_or(p).display().to_string();
+        let mut rows: Vec<(u8, String, Item)> = Vec::new();
+        let mut push = |sev: u8, path: &std::path::Path, line: usize, col: usize, msg: &str| {
+            let label = format!("{}:{}  {}", rel(path), line + 1, msg.lines().next().unwrap_or_default());
+            let action = Action::Goto { path: path.to_path_buf(), line, col };
+            let item = Item { label, action, hint: String::new(), glyph: Some(severity_glyph(sev)) };
+            rows.push((sev, rel(path), item));
+        };
+        for doc in &self.docs {
+            let Some(path) = doc.path.as_deref() else { continue };
+            for d in &doc.lsp.diagnostics {
+                let line = mv::line_of(&doc.text, d.from);
+                push(d.severity, path, line, d.from - mv::line_start(&doc.text, line), &d.message);
+            }
+        }
+        for (path, list) in &self.lsp.elsewhere {
+            if self.docs.iter().any(|d| d.path.as_deref() == Some(path.as_path())) {
+                continue; // open — its live list is above
+            }
+            for (sev, line, col, msg) in list {
+                push(*sev, path, *line, *col, msg);
+            }
+        }
+        if rows.is_empty() {
+            return self.note("no diagnostics anywhere");
+        }
+        rows.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+        let items = rows.into_iter().map(|r| r.2).collect();
+        self.open_picker(Picker::new("workspace diagnostics", items, true), None);
     }
 
     /// For the status line — what the current document's server is doing.
@@ -1502,8 +1616,16 @@ impl Editor {
     /// Server `cid` closed its stdout (exited or crashed) — forget it and everything waiting on it; its docs
     /// go without a server (reopening the file starts a new one).
     pub fn lsp_exited(&mut self, cid: ClientId) {
-        let Some(i) = self.lsp.clients.iter().position(|c| c.id == cid) else { return };
+        if let Some(name) = self.lsp_stopped(cid) {
+            self.set_error(format!("lsp: {name} exited"));
+        }
+    }
+
+    /// Drop client `cid` (the process is killed) and everything that hung on it — its name, if it was there.
+    fn lsp_stopped(&mut self, cid: ClientId) -> Option<String> {
+        let i = self.lsp.clients.iter().position(|c| c.id == cid)?;
         let name = self.lsp.clients.remove(i).name.clone();
+        self.lsp.elsewhere.clear();
         self.lsp.pending.retain(|(c, _), _| *c != cid);
         self.lsp.completion_inflight = false;
         (self.lsp.signature_inflight, self.lsp.signature_again) = (false, false);
@@ -1527,7 +1649,17 @@ impl Editor {
         if self.java_debug.as_ref().is_some_and(|p| p.cid == cid) {
             self.java_debug_fail(format!("{name} exited"));
         }
-        self.set_error(format!("lsp: {name} exited"));
+        Some(name)
+    }
+}
+
+/// Picker glyph for a severity — the same marks as at the line end, in the theme's severity colors.
+fn severity_glyph(sev: u8) -> (&'static str, &'static str) {
+    match sev {
+        1 => ("●", "error"),
+        2 => ("▲", "warning"),
+        3 => ("●", "info"),
+        _ => ("·", "hint"),
     }
 }
 
@@ -2075,6 +2207,64 @@ mod tests {
         ed.lsp.clients[0].caps = caps;
         feed(&mut ed, "A%<esc>:w<ret>");
         assert_eq!(disk(), "fn main() {//!?#%\n  let x = 1;\n}\n");
+        std::fs::remove_dir_all(file.parent().unwrap()).ok();
+    }
+
+    /// `space h` selects the symbol's uses (primary on the cursor's); `space D` lists diagnostics from open
+    /// and unopened files, errors first; `:lsp-stop` detaches, `:lsp-restart` starts a new server.
+    #[test]
+    fn symbol_uses_workspace_diagnostics_and_restart() {
+        let (mut ed, file, _log) = setup("extras", "fn f(x: u8) {\n    g(x);\n}\n");
+        let cid = ed.doc().lsp.client.unwrap();
+        let caps = json!({ "positionEncoding": "utf-8", "documentHighlightProvider": true });
+        ed.on_lsp_message(cid, json!({ "id": 0, "result": { "capabilities": caps } }));
+        let at = |l: u64, a: u64, b: u64| json!({ "range": { "start": { "line": l, "character": a }, "end": { "line": l, "character": b } } });
+        let head = 14 + 6; // the second `x`
+        ed.docs[0].set_selection(Selection::point(head));
+        feed(&mut ed, " h");
+        ed.on_lsp_message(
+            cid,
+            json!({ "id": pending_of(&ed, Kind::Highlights), "result": [at(0, 5, 6), at(1, 6, 7)] }),
+        );
+        let sel = ed.doc().selection();
+        assert_eq!(sel.len(), 2);
+        assert!(
+            sel.primary().from() <= head && head < sel.primary().to(),
+            "primary = the use under the cursor"
+        );
+        // Diagnostics: one in the open file, two in a file that isn't open
+        let other = file.parent().unwrap().join("other.rs");
+        let diags = |uri: String, list: Value| json!({ "method": "textDocument/publishDiagnostics", "params": { "uri": uri, "diagnostics": list } });
+        ed.on_lsp_message(
+            cid,
+            diags(
+                lsp::uri(&file),
+                json!([{ "range": at(0, 0, 1)["range"], "severity": 2, "message": "warn here" }]),
+            ),
+        );
+        ed.on_lsp_message(
+            cid,
+            diags(
+                lsp::uri(&other),
+                json!([
+                    { "range": at(3, 0, 1)["range"], "severity": 1, "message": "broken" },
+                    { "range": at(4, 0, 1)["range"], "severity": 4, "message": "hint" }
+                ]),
+            ),
+        );
+        feed(&mut ed, "<esc> D");
+        let p = ed.picker.as_ref().expect("workspace diagnostics");
+        let labels: Vec<&str> = p.items().iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels.len(), 3);
+        assert!(labels[0].ends_with("other.rs:4  broken"), "errors first: {labels:?}");
+        assert!(labels[1].ends_with("main.rs:1  warn here"), "{labels:?}");
+        feed(&mut ed, "<esc>:lsp-stop<ret>");
+        assert!(ed.doc().lsp.client.is_none() && ed.lsp.clients.is_empty());
+        ed.attach_lsp(ed.doc().id);
+        let first = ed.doc().lsp.client.unwrap();
+        feed(&mut ed, ":lsp-restart<ret>");
+        let again = ed.doc().lsp.client.expect("attached again");
+        assert!(again != first && ed.lsp.clients.len() == 1, "a new server");
         std::fs::remove_dir_all(file.parent().unwrap()).ok();
     }
 

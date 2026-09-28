@@ -227,6 +227,8 @@ commands! {
         goto_next_change => "Next git change",
         goto_prev_change => "Previous git change",
         diagnostics_picker => "Diagnostics",
+        workspace_diagnostics_picker => "Diagnostics in every file",
+        select_references_to_symbol_under_cursor => "Select this symbol's uses",
         file_picker => "Open file picker",
         buffer_picker => "Open buffer picker",
         global_search => "Search in project",
@@ -1524,6 +1526,12 @@ fn last_picker(cx: &mut Context) {
 }
 fn goto_last_accessed_file(cx: &mut Context) {
     cx.editor.goto_last_accessed()
+}
+fn select_references_to_symbol_under_cursor(cx: &mut Context) {
+    cx.editor.select_symbol_uses()
+}
+fn workspace_diagnostics_picker(cx: &mut Context) {
+    cx.editor.workspace_diagnostics_picker()
 }
 fn completion(cx: &mut Context) {
     cx.editor.completion_request();
