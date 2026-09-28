@@ -58,3 +58,6 @@ toml = "1.1.6"
 # Dev task crate (cargo xtask — .cargo/config.toml). Doesn't affect `cargo install --path .`
 [workspace]
 members = ["xtask"]
+
+[dev-dependencies]
+vt100 = "0.16.2"
