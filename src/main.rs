@@ -17,6 +17,7 @@ mod editdiff;
 mod editor;
 mod event;
 mod filetree;
+mod follow;
 mod git;
 mod gitmenu;
 mod grammar;

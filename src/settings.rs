@@ -292,6 +292,13 @@ pub static SETTINGS: &[Setting] = &[
         set: |c, v| c.llm.model = Some(s(v).to_string()).filter(|m| !m.is_empty()),
     },
     Setting {
+        path: "llm.follow",
+        kind: Kind::Bool,
+        doc: "Chat: the editor follows the code Claude is reading, with its thoughts beside it (C-f toggles)",
+        get: |c| Value::from(c.llm.follow),
+        set: |c, v| c.llm.follow = b(v),
+    },
+    Setting {
         path: "llm.context-lines",
         kind: Kind::Int { min: 0, max: 1000 },
         doc: "Lines of context sent around each selection",

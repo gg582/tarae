@@ -10,6 +10,8 @@
 //!   is one dim row (`◦ read  src/lib.rs  L10–49`); it and every `path:line` in an answer is a link —
 //!   click it, or `C-g` walks them newest first. Open files are listed in the context; unsaved ones carry
 //!   their text (disk is stale for them).
+//! - Its thinking comes as summaries (`--thinking-display summarized`) — a quiet italic block here, and
+//!   beside the code in follow mode (`C-f`, `follow.rs`).
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -57,6 +59,8 @@ pub enum Role {
     Note,
     /// A tool Claude ran (`look` says what).
     Tool,
+    /// Claude's thinking (summarized).
+    Thought,
 }
 
 /// Where a chat row points — a file Claude read or a `path:line` in an answer.
@@ -133,6 +137,10 @@ pub struct Chat {
     stopping: bool,
     /// `C-g`: how many links back from the newest the next press goes.
     hop: usize,
+    /// The editor follows where Claude reads (`C-f`).
+    pub follow: crate::follow::Follow,
+    /// This claude doesn't know `--thinking-display` (older CLI) — spawn without it.
+    no_thought_flag: bool,
 }
 
 impl Chat {
@@ -150,6 +158,8 @@ impl Chat {
             sent: HashMap::new(),
             stopping: false,
             hop: 0,
+            follow: Default::default(),
+            no_thought_flag: false,
         }
     }
 
@@ -213,7 +223,11 @@ impl Drop for Chat {
 pub fn open(ed: &mut Editor) {
     match &mut ed.chat {
         Some(c) => c.focused = true,
-        None => ed.chat = Some(Chat::new()),
+        None => {
+            let mut c = Chat::new();
+            c.follow.on = ed.config.llm.follow;
+            ed.chat = Some(c);
+        }
     }
     ensure_proc(ed);
 }
@@ -229,6 +243,7 @@ pub fn reset(ed: &mut Editor) {
         c.msgs.clear();
         c.state = State::Idle;
         c.scroll = 0;
+        c.follow.new_turn();
     }
     ensure_proc(ed);
 }
@@ -241,7 +256,11 @@ fn ensure_proc(ed: &mut Editor) {
         return;
     }
     let cfg = llm::LlmConfig { args: llm::with_tools(&cfg.args, TOOLS), ..cfg };
-    let mut child = match llm::spawn(&cfg, &["--append-system-prompt", SYSTEM]) {
+    let mut extra = vec!["--append-system-prompt", SYSTEM];
+    if !c.no_thought_flag {
+        extra.extend(["--thinking-display", "summarized"]);
+    }
+    let mut child = match llm::spawn(&cfg, &extra) {
         Ok(child) => child,
         Err(e) => {
             c.msgs.push(Msg::new(Role::Note, format!("{}: {e}", cfg.command), ""));
@@ -268,12 +287,29 @@ fn on_event(ed: &mut Editor, generation: u64, ev: StreamEv) {
             }
             c.state = State::Thinking;
         }
-        StreamEv::Tool { name, input } => {
+        StreamEv::Thought(t) => {
             if c.state == State::Idle {
                 return;
             }
             c.state = State::Thinking;
-            c.msgs.push(Msg::tool(look(&name, &input)));
+            match c.msgs.last_mut() {
+                Some(m) if m.role == Role::Thought => m.text.push_str(&t),
+                _ => c.msgs.push(Msg::new(Role::Thought, t, "")),
+            }
+        }
+        StreamEv::Tool { id, name, input } => {
+            if c.state == State::Idle {
+                return;
+            }
+            c.state = State::Thinking;
+            let look = look(&name, &input);
+            c.msgs.push(Msg::tool(look.clone()));
+            crate::follow::on_tool(ed, &id, &name, &input, &look);
+        }
+        StreamEv::ToolResult { id, text } => {
+            if c.state != State::Idle {
+                crate::follow::on_result(ed, &id, &text);
+            }
         }
         StreamEv::Text(t) => {
             if c.state == State::Idle {
@@ -301,9 +337,20 @@ fn on_event(ed: &mut Editor, generation: u64, ev: StreamEv) {
                     c.msgs.push(Msg::new(Role::Note, e, ""));
                 }
             }
+            crate::follow::on_done(ed);
         }
         StreamEv::Exit(err) => {
             c.proc = None;
+            c.follow.gaze = None;
+            // An older claude without the flag: quietly again without it
+            if err.contains("thinking-display") && !c.no_thought_flag {
+                c.no_thought_flag = true;
+                if c.state != State::Idle {
+                    c.state = State::Idle;
+                    c.msgs.push(Msg::new(Role::Note, "restarted claude — send again", ""));
+                }
+                return ensure_proc(ed);
+            }
             if c.state != State::Idle {
                 c.state = State::Idle;
                 let e = if err.is_empty() {
@@ -339,6 +386,7 @@ pub fn send(ed: &mut Editor) {
     }
     c.sent.extend(sent);
     c.hop = 0;
+    c.follow.new_turn();
     c.msgs.push(Msg::new(Role::User, question, chip));
     c.input.clear();
     c.cursor = 0;
@@ -578,6 +626,7 @@ pub fn key(ed: &mut Editor, key: Key) -> bool {
         (Code::Char('l'), true, _) => reset(ed),
         (Code::Char('r'), true, _) => apply_code(ed),
         (Code::Char('g'), true, _) => follow(ed),
+        (Code::Char('f'), true, _) => crate::follow::toggle(ed),
         (Code::Char('y'), true, _) => match c.last_code() {
             Some(code) => {
                 crate::clipboard::copy(&ed.events.jobs(), code);

@@ -1258,6 +1258,13 @@ fn draw(
     if let Some(rev) = editor.review.as_ref().filter(|r| !r.ready) {
         draw_ask_stream(rev, editor, ui, lay, out)?;
     }
+    if let Some(c) = editor.chat.as_ref().filter(|c| c.follow.on && c.busy())
+        && editor.review.is_none()
+        && lay.edit_w > 0
+        && !editor.welcome()
+    {
+        draw_thought_card(c, editor, ui, out)?;
+    }
     if let (Some(lines), Some(at)) = (&editor.popup, text_cursor) {
         draw_popup(lines, at, ui, editor, lay, out)?;
     }
@@ -1460,6 +1467,14 @@ fn draw_text(
     };
     let label_style =
         Style { fg: ui.accent.fg, bg: blend(ui.accent.fg, ui.tint, 0.16), bold: true, ..Style::default() };
+    // Lines Claude is reading right now (chat) — a faint accent wash
+    let gaze = editor
+        .chat
+        .as_ref()
+        .and_then(|c| c.follow.gaze.as_ref())
+        .filter(|g| g.path.is_some() && g.path == doc.path)
+        .and_then(|g| g.lines.clone());
+    let gaze_bg = blend(ui.accent.fg, ui.tint, 0.09).or(ui.base.bg);
     // git: sign per visible line (glyph, color)
     let git_color = |k: &str| Style { fg: editor.theme.try_get(k).and_then(|s| s.fg), ..ui.base };
     let mut git_marks: Vec<Option<(&str, Style)>> = vec![None; span];
@@ -1661,6 +1676,7 @@ fn draw_text(
                 Some((sev @ 1..=2, ..)) => {
                     Style { bg: blend(ui.sign[sev as usize].fg, ui.tint, 0.07).or(ui.base.bg), ..ui.base }
                 }
+                _ if gaze.as_ref().is_some_and(|g| g.contains(&line)) => Style { bg: gaze_bg, ..ui.base },
                 _ => ui.base,
             }
         };
@@ -4291,6 +4307,134 @@ fn draw_ask_stream(
     card_edge(out, ui, card, x0, y + 1 + body, width, pad, false)
 }
 
+/// Follow mode: what Claude is doing and its latest words, in a card beside the code it's reading —
+/// under the lines read if there's room, else above them, else at the bottom of the focused pane.
+///
+/// ```text
+///      ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+///        ● reading  src/llm.rs  L230–249      3.2s
+///        The chat swaps the empty tool list here;
+///        ask never calls it, so it stays tool-less.
+///      ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+/// ```
+fn draw_thought_card(
+    c: &crate::chat::Chat,
+    editor: &Editor,
+    ui: &Ui,
+    out: &mut impl Write,
+) -> io::Result<()> {
+    use crate::chat::Role;
+    use crate::markdown::Span;
+    const BODY: usize = 6;
+    let Some((_, rect, _, rows)) = editor.screen.panes.iter().find(|p| p.0 == editor.focus) else {
+        return Ok(());
+    };
+    let title = usize::from(editor.views.len() > 1);
+    let (px, py, pw, ph) = (rect.x, rect.y + title, rect.w, rect.h.saturating_sub(title));
+    let inner = (pw * 2 / 3).clamp(36, 64).min(pw.saturating_sub(6));
+    if inner < 20 {
+        return Ok(());
+    }
+    let card = card_style(ui, editor, "ui.popup");
+    let pad = card_padding(ui, card);
+    let dim = Style { fg: ui.virt.fg, ..card };
+    let faint = Style { fg: ui.linenr.fg, ..card };
+    let accent = Style { fg: ui.accent.fg, ..card };
+    let string = card.patch(editor.theme.try_get("string").unwrap_or(dim));
+    // Header: what it's doing
+    let gaze = c.follow.gaze.as_ref();
+    let mut head: Vec<Span> = match gaze {
+        Some(g) => {
+            let verb = match g.look.verb {
+                "read" => "reading",
+                "search" => "searching",
+                "find" => "finding",
+                _ => "using",
+            };
+            // The target first; the range/folder gets what's left (dropped if that's too little)
+            let room = inner.saturating_sub(2 + verb.len() + 2 + 8);
+            let what =
+                if g.look.pattern { fit_ellipsis(&g.look.what, room) } else { fit_left(&g.look.what, room) };
+            let left = room.saturating_sub(what.width() + 2);
+            let range = match g.look.range.width() {
+                0 => String::new(),
+                n if n <= left => format!("  {}", g.look.range),
+                _ if left >= 8 => format!("  {}", fit_left(&g.look.range, left)),
+                _ => String::new(),
+            };
+            vec![
+                Span { text: "● ".into(), style: accent },
+                Span { text: format!("{verb}  "), style: Style { bold: true, ..dim } },
+                Span { text: what, style: if g.look.pattern { string } else { card } },
+                Span { text: range, style: faint },
+            ]
+        }
+        None => vec![
+            Span { text: wave(c.started), style: accent },
+            Span { text: " thinking".into(), style: Style { bold: true, ..dim } },
+        ],
+    };
+    let secs = format!("{:.1}s", c.started.elapsed().as_secs_f32());
+    let used: usize = head.iter().map(|s| s.text.width()).sum();
+    head.push(Span { text: " ".repeat(inner.saturating_sub(used + secs.len())), style: card });
+    head.push(Span { text: secs, style: faint });
+    // Body: the latest words this turn — its thinking (italic) or what it said between lookups
+    let turn = c.msgs.iter().rposition(|m| m.role == Role::User).map_or(0, |i| i + 1);
+    let voice = c.msgs[turn..].iter().rev().find(|m| matches!(m.role, Role::Thought | Role::Assistant));
+    let body: Vec<Vec<Span>> = match voice {
+        Some(m) if m.role == Role::Thought => thought_rows(&m.text, inner, dim, faint, editor),
+        Some(m) => {
+            let lang = editor.doc().syntax.as_ref().map(|s| s.lang.name.clone());
+            let rendered = crate::markdown::render(m.text.trim(), &editor.theme, lang.as_deref());
+            chat_markdown(&rendered, inner, faint, ui.base.bg)
+        }
+        None => Vec::new(),
+    };
+    // The newest rows; cut mid-way → `…` in front, and no blank row on top
+    let mut from = body.len().saturating_sub(BODY);
+    while from < body.len() && blank(&body[from]) {
+        from += 1;
+    }
+    let mut body = body[from..].to_vec();
+    if from > 0
+        && let Some(first) = body.first_mut()
+    {
+        first.insert(0, Span { text: "… ".into(), style: faint });
+    }
+    let h = 1 + body.len() + 2 * pad;
+    if ph < h + 2 {
+        return Ok(());
+    }
+    // Where: under the lines read · above them · bottom of the pane
+    let row_of = |line: usize| rows.iter().position(|r| r.0 == line);
+    let lines =
+        gaze.filter(|g| g.path.is_some() && g.path == editor.doc().path).and_then(|g| g.lines.clone());
+    let fits = |y: usize| y >= py && y + h <= py + ph;
+    let bottom = py + ph - h;
+    let y0 = lines
+        .and_then(|l| {
+            let below = rows.iter().rposition(|r| l.contains(&r.0)).map(|r| py + r + 1);
+            // Above ends right on the first line read
+            let above = row_of(l.start).and_then(|r| (py + r).checked_sub(h));
+            below.filter(|&y| fits(y)).or(above.filter(|&y| fits(y)))
+        })
+        .unwrap_or(bottom);
+    let width = inner + 4;
+    let x0 = (px + pw).saturating_sub(width + 1);
+    card_edge(out, ui, card, x0, y0, width, pad, true)?;
+    let mut y = y0 + pad;
+    for row in std::iter::once(&head[..]).chain(body.iter().map(|r| &r[..])) {
+        queue!(out, MoveTo(x0 as u16, y as u16))?;
+        apply(out, card)?;
+        queue!(out, Print("  "))?;
+        let used = chat_spans(out, row, card, inner)?;
+        apply(out, card)?;
+        queue!(out, Print(" ".repeat(inner.saturating_sub(used) + 2)))?;
+        y += 1;
+    }
+    card_edge(out, ui, card, x0, y, width, pad, false)
+}
+
 /// Chat panel — right of the editing area. Half-block left edge (`▐`) so it floats a bit; accent if focused.
 ///
 /// ```text
@@ -4393,6 +4537,35 @@ fn draw_chat(
                     }
                 }
             }
+            // Thinking: an aside — faint bar, italic; finished ones fold to two rows
+            Role::Thought => {
+                lines.push(Vec::new());
+                let mut cache = m.cache.borrow_mut();
+                if !matches!(&*cache, Some((len, cw, _)) if *len == m.text.len() && *cw == w) {
+                    *cache = Some((m.text.len(), w, thought_rows(&m.text, w - 2, dim, faint, editor)));
+                }
+                let live = i + 1 == n && c.busy();
+                let keep = if live { 8 } else { 2 };
+                // Folded: the first two rows with words (a bold step title and the start of its text)
+                let body: Vec<&Vec<Span>> =
+                    cache.as_ref().unwrap().2.iter().filter(|r| live || !blank(r)).collect();
+                let shown = if live {
+                    &body[body.len().saturating_sub(keep)..]
+                } else {
+                    &body[..body.len().min(keep)]
+                };
+                for (k, row) in shown.iter().enumerate() {
+                    let mut r = vec![sp("▎ ".into(), faint)];
+                    r.extend(row.iter().cloned());
+                    if live && k == 0 && body.len() > keep {
+                        r.insert(1, sp("… ".into(), faint));
+                    }
+                    if !live && k + 1 == shown.len() && body.len() > keep {
+                        r.push(sp("…".into(), faint));
+                    }
+                    lines.push(r);
+                }
+            }
             // `◦ read  src/lib.rs  L10–49` — one quiet row per call; a run of them stays together
             Role::Tool => {
                 let Some(look) = &m.look else { continue };
@@ -4428,7 +4601,8 @@ fn draw_chat(
             }
         }
     }
-    if c.state == State::Thinking && !exploring {
+    let thought_live = c.msgs.last().is_some_and(|m| m.role == Role::Thought);
+    if c.state == State::Thinking && !exploring && !thought_live {
         lines.push(Vec::new());
         lines.push(vec![sp(wave(c.started), accent), sp(" thinking…".into(), dim)]);
     }
@@ -4463,6 +4637,15 @@ fn draw_chat(
     chat_row_start(out, x0, y, edge, card)?;
     apply(out, if c.focused { strong } else { dim })?;
     queue!(out, Print("claude"))?;
+    // Follow badge: accent while following, faint once the user took over
+    let badge = match (c.follow.on, c.follow.paused) {
+        (false, _) => "",
+        (true, false) => " › follow",
+        (true, true) => " › paused",
+    };
+    apply(out, if c.follow.paused { faint } else { accent })?;
+    queue!(out, Print(badge))?;
+    let title_w = 6 + badge.width();
     let status: Vec<Span> = match c.state {
         State::Idle => vec![sp("ready".into(), faint)],
         s => vec![
@@ -4485,8 +4668,8 @@ fn draw_chat(
     };
     let sw: usize = status.iter().map(|s| s.text.width()).sum();
     apply(out, card)?;
-    queue!(out, Print(" ".repeat(w.saturating_sub(6 + sw))))?;
-    let used = 6 + w.saturating_sub(6 + sw) + chat_spans(out, &status, card, w)?;
+    queue!(out, Print(" ".repeat(w.saturating_sub(title_w + sw))))?;
+    let used = title_w + w.saturating_sub(title_w + sw) + chat_spans(out, &status, card, w)?;
     chat_row_end(out, card, lay.chat_w, used)?;
     y += 1;
     chat_row_start(out, x0, y, edge, card)?;
@@ -4552,9 +4735,7 @@ fn draw_chat(
     } else if c.busy() {
         hints.push(("C-c", "stop"));
         hints.push(("esc", "editor"));
-        if !c.links().is_empty() {
-            hints.push(("C-g", "follow"));
-        }
+        hints.push(("C-f", if c.follow.active() { "unfollow" } else { "follow" }));
     } else {
         let code = c.last_code().is_some();
         hints.push(("enter", "send"));
@@ -4569,6 +4750,7 @@ fn draw_chat(
             hints.push(("C-y", "copy"));
         }
         hints.push(("C-l", "new"));
+        hints.push(("C-f", if c.follow.on { "unfollow" } else { "follow" }));
     }
     let mut used = 0;
     for (k, d) in hints {
@@ -4636,6 +4818,33 @@ fn chat_markdown(
         }
     }
     out
+}
+
+/// A row with nothing but spaces.
+fn blank(row: &[crate::markdown::Span]) -> bool {
+    row.iter().all(|s| s.text.trim().is_empty())
+}
+
+/// Thinking summary → rows: italic in the dim tone (bold kept — summaries title their steps in bold).
+fn thought_rows(
+    text: &str,
+    w: usize,
+    dim: Style,
+    faint: Style,
+    editor: &Editor,
+) -> Vec<Vec<crate::markdown::Span>> {
+    let rendered = crate::markdown::render(text.trim(), &editor.theme, None);
+    chat_markdown(&rendered, w, faint, None)
+        .into_iter()
+        .map(|row| {
+            row.into_iter()
+                .map(|s| crate::markdown::Span {
+                    style: Style { italic: !s.style.bold, bold: s.style.bold, ..dim },
+                    text: s.text,
+                })
+                .collect()
+        })
+        .collect()
 }
 
 /// A clickable span in the chat pane: (start col, end col, target).

@@ -1,22 +1,22 @@
 # chat_explore · 100x30 · theme meok · cursor 26:65
 ## text
 00  tarae  ›  src  ›  demo.rs
-01   1 use std::collections::HashMap;                          ▐  claude                         ready
+01   1 use std::collections::HashMap;                          ▐  claude › follow                ready
 02   1                                                         ▐  ────────────────────────────────────
 03   2 ▎ Counts how often each word appears.                   ▐  demo.rs · L5
 04     ▎                                                       ▐  ▎ Who calls word_counts?
 05     ▎ Words are split on whitespace; case is kept.          ▐
-06   5 pub fn word_counts(text: &str) -> HashMap<&str, usize> {▐  ◦ search word_counts\(  in src
-07   6     let mut counts = HashMap::new();                    ▐  ◦ find   src/**/*.rs
-08   7     for word in text.split_whitespace() {               ▐  ◦ read   src/lib.rs  L1–40
-09   8     │   *counts.entry(word).or_insert(0) += 1;          ▐
-10   9     }                                                   ▐  Only main does, at src/demo.rs:15.
-11  10     counts                                              ▐  src/lib.rs:12 has a copy that
-12  11 }                                                       ▐  splits on commas.
-13  12                                                         ▐                                  2.4s
-14  13 fn main() {                                             ▐
-15  14     let text = "the quick brown fox jumps over the lazy ▐
-16  15     let counts = word_counts(text);                     ▐
+06   5 pub fn word_counts(text: &str) -> HashMap<&str, usize> {▐  ▎ Finding the callers
+07   6     let mut counts = HashMap::new();                    ▐  ▎ It's public, so other modules may…
+08   7     for word in text.split_whitespace() {               ▐
+09   8     │   *counts.entry(word).or_insert(0) += 1;          ▐  ◦ search word_counts\(  in src
+10   9     }                                                   ▐  ◦ find   src/**/*.rs
+11  10     counts                                              ▐  ◦ read   src/lib.rs  L1–40
+12  11 }                                                       ▐
+13  12                                                         ▐  Only main does, at src/demo.rs:15.
+14  13 fn main() {                                             ▐  src/lib.rs:12 has a copy that
+15  14     let text = "the quick brown fox jumps over the lazy ▐  splits on commas.
+16  15     let counts = word_counts(text);                     ▐                                  2.4s
 17  16     println!("{} distinct words", counts.len()); // 타래▐
 18  17 }                                                       ▐
 19                                                             ▐
@@ -63,22 +63,22 @@
 29
 ## fg · visible glyphs only, blank = unlisted color, UPPERCASE = bold
 00  ddddd  f  ddd  f  TTTTTTT
-01   A                                                            TTTTTT                         fffff
+01   A                                                            TTTTTT a aaaaaa                fffff
 02   f                                                            ffffffffffffffffffffffffffffffffffff
 03   f                                                            fffffff f ff
 04                                                                a TTT TTTTT TTTTTTTTTTTT
 05
-06   f                                                            f ffffff ggggggggggggg  ff fff
-07   f                                                            f ffff   ggggggggggg
-08   f                                                            f ffff   dddddddddd  fffff
-09   f
-10   f
-11  ff
+06   f                                                            f DDDDDDD DDD DDDDDDD
+07   f                                                            f dddd ddddddd dd ddddd ddddddd dddf
+08   f
+09   f                                                            f ffffff ggggggggggggg  ff fff
+10   f                                                            f ffff   ggggggggggg
+11  ff                                                            f ffff   dddddddddd  fffff
 12  ff
-13  ff                                                                                            ffff
+13  ff
 14  ff
 15  ff                gggg ggggg ggggg ggg ggggg gggg ggg gggg
-16  ff
+16  ff                                                                                            ffff
 17  ff              ggg gggggggg gggggg
 18  ff
 19

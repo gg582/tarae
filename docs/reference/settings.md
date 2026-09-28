@@ -53,6 +53,7 @@ The name is also the `:set` path: `:set editor.scrolloff 8` changes it for this 
 | `llm.command` | string | `"claude"` | LLM CLI speaking claude's stream-json protocol |
 | `llm.args` | list of strings | `["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--tools", "", "--no-session-persistence", "--strict-mcp-config", "--setting-sources", ""]` | Arguments for llm.command (default: claude -p with speed flags) |
 | `llm.model` | string | `""` | Model for llm.command, e.g. "haiku" ("" = the CLI's default) |
+| `llm.follow` | bool | `false` | Chat: the editor follows the code Claude is reading, with its thoughts beside it (C-f toggles) |
 | `llm.context-lines` | integer 0–1000 | `20` | Lines of context sent around each selection |
 
 ## Tables you name yourself

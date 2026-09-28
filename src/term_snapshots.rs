@@ -659,8 +659,8 @@ fn snapshot_chat_empty() {
     s.check("chat_empty");
 }
 
-/// Chat panel after Claude explored the project: tool rows (search·find·read) and an answer whose
-/// `path:line` references are underlined links.
+/// Chat panel after Claude explored the project in follow mode: a folded thought, tool rows
+/// (search·find·read) and an answer whose `path:line` references are underlined links.
 #[test]
 fn snapshot_chat_explore() {
     use crate::chat::{Link, Look, Msg, Role};
@@ -680,8 +680,15 @@ fn snapshot_chat_explore() {
         Some(Look { verb, what: what.into(), pattern, range: range.into(), link })
     };
     let lib = std::path::PathBuf::from("/p/src/lib.rs");
+    s.ed.chat.as_mut().unwrap().follow.on = true;
     s.ed.chat.as_mut().unwrap().msgs = vec![
         msg(Role::User, "Who calls word_counts?", "demo.rs · L5", None),
+        msg(
+            Role::Thought,
+            "**Finding the callers**\n\nIt's public, so other modules may call it — search before reading.",
+            "",
+            None,
+        ),
         msg(Role::Tool, "", "", look("search", "word_counts\\(", true, "in src", None)),
         msg(Role::Tool, "", "", look("find", "src/**/*.rs", true, "", None)),
         msg(

@@ -816,6 +816,7 @@ impl Editor {
         self.git_schedule();
         self.blame_schedule();
         self.agent_next_diff();
+        crate::follow::watch(self);
         self.agent_selection_tick(false);
         self.schedule_tick();
     }
@@ -902,6 +903,12 @@ impl Editor {
         };
         if matches!(m.kind, K::Down | K::ScrollUp | K::ScrollDown) {
             self.focus_view(pid);
+        }
+        // Scrolling the code yourself takes over from follow mode (clicks do too, via the cursor)
+        if matches!(m.kind, K::ScrollUp | K::ScrollDown)
+            && let Some(c) = self.chat.as_mut().filter(|c| c.follow.active() && c.busy())
+        {
+            c.follow.paused = true;
         }
         if pid != self.focus {
             return;
@@ -2315,6 +2322,103 @@ mod tests {
         feed(&mut ed, "<C-g>");
         assert_eq!(ed.doc().text.byte_to_line(ed.doc().selection().primary().cursor(&ed.doc().text)), 1);
         assert!(ed.chat.as_ref().unwrap().focused);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Fake claude that answers every line with `events` (JSON lines; `sleep N` entries pause).
+    fn fake_claude_stream(ed: &mut Editor, events: &[serde_json::Value]) {
+        let body: Vec<String> = events
+            .iter()
+            .map(|e| match e.as_str() {
+                Some(cmd) => cmd.to_string(),
+                None => format!("printf '%s\\n' '{e}'"),
+            })
+            .collect();
+        ed.config.llm.command = "sh".into();
+        ed.config.llm.args = vec!["-c".into(), format!("while read -r line; do {}; done", body.join("; "))];
+    }
+
+    fn follow_project(name: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("tarae-follow-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let dir = std::fs::canonicalize(&dir).unwrap();
+        let lines = |n: usize| (1..=n).map(|i| format!("line {i}\n")).collect::<String>();
+        for (f, n) in [("main.rs", 3), ("util.rs", 5), ("lib.rs", 10)] {
+            std::fs::write(dir.join(f), lines(n)).unwrap();
+        }
+        (dir.clone(), dir.join("main.rs"), dir.join("util.rs"), dir.join("lib.rs"))
+    }
+
+    fn cursor_line(ed: &Editor) -> usize {
+        ed.doc().text.byte_to_line(ed.doc().selection().primary().cursor(&ed.doc().text))
+    }
+
+    /// Follow mode: the editor goes to each file Claude reads, to a search's first hit, and at the end to
+    /// the answer's first reference; files it opened on the way close; C-o returns to where you were.
+    #[test]
+    fn chat_follow_goes_where_claude_reads() {
+        use serde_json::json;
+        let (dir, main, util, lib) = follow_project("go");
+        let delta = |kind: &str, key: &str, t: &str| {
+            let mut d = json!({"type": kind});
+            d[key] = json!(t);
+            json!({"type": "stream_event", "event": {"type": "content_block_delta", "delta": d}})
+        };
+        let tool = |id: &str, name: &str, input: serde_json::Value| json!({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": id, "name": name, "input": input}]}});
+        let result = |id: &str, text: String| json!({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": id, "content": text}]}});
+        let mut ed = editor("");
+        ed.open(&main).unwrap();
+        ed.config.llm.follow = true;
+        fake_claude_stream(
+            &mut ed,
+            &[
+                delta("thinking_delta", "thinking", "Checking the helpers first."),
+                tool("r1", "Read", json!({"file_path": util})),
+                tool("g1", "Grep", json!({"pattern": "line 3", "output_mode": "content"})),
+                result("g1", format!("{}:3:line 3", lib.display())),
+                delta("text_delta", "text", &format!("Defined at {}:5.", lib.display())),
+                json!({"type": "result", "result": "done"}),
+            ],
+        );
+        feed(&mut ed, "<space>lwhere?<ret>");
+        settle_until(&mut ed, |ed| !ed.chat.as_ref().unwrap().busy());
+        let c = ed.chat.as_ref().unwrap();
+        assert!(c.msgs.iter().any(|m| m.role == crate::chat::Role::Thought && m.text.contains("helpers")));
+        assert!(c.follow.gaze.is_none(), "the gaze ends with the turn");
+        assert_eq!(ed.doc().path.as_deref(), Some(lib.as_path()), "at the answer's reference");
+        assert_eq!(cursor_line(&ed), 4);
+        assert!(!ed.docs.iter().any(|d| d.path.as_deref() == Some(util.as_path())), "the preview closed");
+        assert!(ed.chat.as_ref().unwrap().focused, "the chat keeps the keys");
+        feed(&mut ed, "<esc><C-o>");
+        assert_eq!(ed.doc().path.as_deref(), Some(main.as_path()), "one jump back = before the turn");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Moving in the editor while Claude explores pauses following — it stays where the user is.
+    #[test]
+    fn chat_follow_pauses_when_the_user_moves() {
+        use serde_json::json;
+        let (dir, main, util, lib) = follow_project("pause");
+        let read = |id: &str, p: &PathBuf| json!({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": id, "name": "Read", "input": {"file_path": p}}]}});
+        let mut ed = editor("");
+        ed.open(&main).unwrap();
+        fake_claude_stream(
+            &mut ed,
+            &[
+                read("r1", &util),
+                json!("sleep 0.5"),
+                read("r2", &lib),
+                json!({"type": "result", "result": "done"}),
+            ],
+        );
+        feed(&mut ed, "<space>lwhere?<ret><C-f>");
+        assert!(ed.chat.as_ref().unwrap().follow.active(), "C-f turns it on");
+        settle_until(&mut ed, |ed| ed.doc().path.as_deref() == Some(util.as_path()));
+        feed(&mut ed, "<esc>j");
+        settle_until(&mut ed, |ed| !ed.chat.as_ref().unwrap().busy());
+        assert!(ed.chat.as_ref().unwrap().follow.paused);
+        assert_eq!(ed.doc().path.as_deref(), Some(util.as_path()), "stayed with the user");
+        assert_eq!(cursor_line(&ed), 1);
         std::fs::remove_dir_all(&dir).ok();
     }
 

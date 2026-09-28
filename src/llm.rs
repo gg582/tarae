@@ -49,6 +49,8 @@ pub struct LlmConfig {
     pub model: Option<String>,
     /// Lines of context sent before and after the selection.
     pub context_lines: usize,
+    /// Chat: the editor follows where Claude is reading (`C-f` in the chat toggles it per session).
+    pub follow: bool,
 }
 
 impl Default for LlmConfig {
@@ -58,6 +60,7 @@ impl Default for LlmConfig {
             args: DEFAULT_ARGS.iter().map(|s| s.to_string()).collect(),
             model: None,
             context_lines: 20,
+            follow: false,
         }
     }
 }
@@ -130,10 +133,14 @@ pub fn kill(pid: u32) {
 pub enum StreamEv {
     /// Thinking (thinking fragments·token estimate).
     Thinking,
+    /// Summarized thinking text (chat with `--thinking-display summarized` — batched like `Text`).
+    Thought(String),
     /// Answer text fragment (batched every 25 ms).
     Text(String),
     /// A tool call (chat panel — Read·Grep·Glob with its full input).
-    Tool { name: String, input: serde_json::Value },
+    Tool { id: String, name: String, input: serde_json::Value },
+    /// What a tool returned (its first 4 KB — enough to see where a search landed).
+    ToolResult { id: String, text: String },
     /// End of a turn — final text or error (not logged in·stopped etc.).
     Done(Result<String, String>),
     /// The process exited (for the chat panel — last stderr line).
@@ -164,7 +171,13 @@ pub fn pump(
             });
         }
         let send = |ev: StreamEv| route(ev).is_none_or(|apply| tx.send(Event::Job(apply)).is_ok());
+        // Streamed text not yet sent — answer text or (`pending_thought`) thinking summary
         let mut pending = String::new();
+        let mut pending_thought = false;
+        let flush = |pending: &mut String, thought: bool| {
+            let t = std::mem::take(pending);
+            t.is_empty() || send(if thought { StreamEv::Thought(t) } else { StreamEv::Text(t) })
+        };
         let mut last_flush = Instant::now();
         let mut thinking_sent = false;
         let mut done = false;
@@ -172,9 +185,9 @@ pub fn pump(
             for line in BufReader::new(out).lines().map_while(Result::ok) {
                 let Ok(ev) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
                 // Tool calls arrive whole in the assistant message — text streamed before them goes first
-                let tools = tool_uses(&ev);
+                let tools = tool_events(&ev);
                 if !tools.is_empty() {
-                    if !pending.is_empty() && !send(StreamEv::Text(std::mem::take(&mut pending))) {
+                    if !flush(&mut pending, pending_thought) {
                         break;
                     }
                     thinking_sent = false;
@@ -184,12 +197,23 @@ pub fn pump(
                     continue;
                 }
                 match parse_line(&ev) {
-                    Some(StreamEv::Text(t)) => {
+                    Some(ev @ (StreamEv::Text(_) | StreamEv::Thought(_))) => {
+                        let (t, thought) = match ev {
+                            StreamEv::Thought(t) => (t, true),
+                            StreamEv::Text(t) => (t, false),
+                            _ => unreachable!(),
+                        };
+                        if thought != pending_thought {
+                            if !flush(&mut pending, pending_thought) {
+                                break;
+                            }
+                            pending_thought = thought;
+                        }
                         pending.push_str(&t);
-                        thinking_sent = false;
+                        thinking_sent = thought;
                         if last_flush.elapsed() >= Duration::from_millis(25) {
                             last_flush = Instant::now();
-                            if !send(StreamEv::Text(std::mem::take(&mut pending))) {
+                            if !flush(&mut pending, pending_thought) {
                                 break;
                             }
                         }
@@ -199,9 +223,7 @@ pub fn pump(
                         send(StreamEv::Thinking);
                     }
                     Some(d @ StreamEv::Done(_)) => {
-                        if !pending.is_empty() {
-                            send(StreamEv::Text(std::mem::take(&mut pending)));
-                        }
+                        flush(&mut pending, pending_thought);
                         thinking_sent = false;
                         let ok = send(d);
                         if once || !ok {
@@ -228,20 +250,38 @@ pub fn pump(
     });
 }
 
-/// `tool_use` blocks of a complete assistant message.
-fn tool_uses(ev: &serde_json::Value) -> Vec<StreamEv> {
-    if ev["type"] != "assistant" {
-        return Vec::new();
-    }
+/// `tool_use` blocks of a complete assistant message · `tool_result` blocks of the user message that
+/// answers them.
+fn tool_events(ev: &serde_json::Value) -> Vec<StreamEv> {
     let Some(content) = ev["message"]["content"].as_array() else { return Vec::new() };
-    content
-        .iter()
-        .filter(|b| b["type"] == "tool_use")
-        .map(|b| StreamEv::Tool {
-            name: b["name"].as_str().unwrap_or_default().to_string(),
-            input: b["input"].clone(),
-        })
-        .collect()
+    let id = |b: &serde_json::Value, k: &str| b[k].as_str().unwrap_or_default().to_string();
+    match ev["type"].as_str() {
+        Some("assistant") => content
+            .iter()
+            .filter(|b| b["type"] == "tool_use")
+            .map(|b| StreamEv::Tool { id: id(b, "id"), name: id(b, "name"), input: b["input"].clone() })
+            .collect(),
+        Some("user") => content
+            .iter()
+            .filter(|b| b["type"] == "tool_result")
+            .map(|b| {
+                // A string, or text blocks
+                let mut text = match &b["content"] {
+                    serde_json::Value::String(s) => s.clone(),
+                    serde_json::Value::Array(parts) => {
+                        parts.iter().filter_map(|p| p["text"].as_str()).collect::<Vec<_>>().join("\n")
+                    }
+                    _ => String::new(),
+                };
+                if text.len() > 4096 {
+                    let cut = (0..=4096).rev().find(|&i| text.is_char_boundary(i)).unwrap_or(0);
+                    text.truncate(cut);
+                }
+                StreamEv::ToolResult { id: id(b, "tool_use_id"), text }
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// `args` with its `--tools <list>` swapped for `tools` (read-only ones for the chat panel) — also allowed
@@ -266,7 +306,10 @@ fn parse_line(ev: &serde_json::Value) -> Option<StreamEv> {
             let delta = &ev["event"]["delta"];
             match delta["type"].as_str()? {
                 "text_delta" => Some(StreamEv::Text(delta["text"].as_str()?.to_string())),
-                "thinking_delta" => Some(StreamEv::Thinking),
+                "thinking_delta" => Some(match delta["thinking"].as_str().filter(|t| !t.is_empty()) {
+                    Some(t) => StreamEv::Thought(t.to_string()),
+                    None => StreamEv::Thinking,
+                }),
                 _ => None,
             }
         }
@@ -587,7 +630,7 @@ pub fn ask(ed: &mut Editor, instruction: &str) -> Result<(), String> {
     ed.llm_pid = Some(child.id());
     pump(child, true, ed.events.sender(), move |ev| {
         Some(match ev {
-            StreamEv::Thinking => Box::new(move |ed: &mut Editor| {
+            StreamEv::Thinking | StreamEv::Thought(_) => Box::new(move |ed: &mut Editor| {
                 if let Some(r) = ed.review.as_mut().filter(|r| r.generation == generation) {
                     r.thinking = true;
                 }
@@ -603,7 +646,7 @@ pub fn ask(ed: &mut Editor, instruction: &str) -> Result<(), String> {
                 Box::new(move |ed: &mut Editor| on_result(ed, generation, result))
             }
             // ask runs without tools
-            StreamEv::Tool { .. } | StreamEv::Exit(_) => return None,
+            StreamEv::Tool { .. } | StreamEv::ToolResult { .. } | StreamEv::Exit(_) => return None,
         })
     });
     Ok(())
@@ -914,10 +957,10 @@ mod tests {
             {"type": "tool_use", "name": "Read", "input": {"file_path": "/p/src/lib.rs", "offset": 10}},
             {"type": "tool_use", "name": "Grep", "input": {"pattern": "fn add"}},
         ]}});
-        let got: Vec<(String, serde_json::Value)> = tool_uses(&ev)
+        let got: Vec<(String, serde_json::Value)> = tool_events(&ev)
             .into_iter()
             .map(|e| match e {
-                StreamEv::Tool { name, input } => (name, input),
+                StreamEv::Tool { name, input, .. } => (name, input),
                 _ => unreachable!(),
             })
             .collect();
@@ -926,7 +969,18 @@ mod tests {
         assert_eq!(got[0].1["offset"], 10);
         assert_eq!(got[1].1["pattern"], "fn add");
         let text = serde_json::json!({"type": "assistant", "message": {"content": [{"type": "text", "text": "hi"}]}});
-        assert!(tool_uses(&text).is_empty());
+        assert!(tool_events(&text).is_empty());
+        let result = serde_json::json!({"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "t1", "content": [{"type": "text", "text": "a.rs:3:fn a"}]}]}});
+        assert!(matches!(&tool_events(&result)[..],
+            [StreamEv::ToolResult { id, text }] if id == "t1" && text == "a.rs:3:fn a"));
+        // Summarized thinking carries text; the omitted kind is just a signal
+        let delta = |t: &str| {
+            serde_json::json!({"type": "stream_event", "event": {"type": "content_block_delta",
+            "delta": {"type": "thinking_delta", "thinking": t}}})
+        };
+        assert!(matches!(parse_line(&delta("hmm")), Some(StreamEv::Thought(t)) if t == "hmm"));
+        assert!(matches!(parse_line(&delta("")), Some(StreamEv::Thinking)));
     }
 
     #[test]

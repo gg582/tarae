@@ -64,8 +64,21 @@ each one while the chat keeps the keys.
 | `C-r` | Replace the selection with the answer's code — through the same review |
 | `C-y` | Copy the code |
 | `C-g` | Go to where Claude looked or pointed (again = one further back) |
+| `C-f` | Follow mode on/off (resumes if you took over) |
 | `C-l` | New conversation |
 | `esc` | Back to the editor |
+
+### Follow mode
+
+With follow on (`C-f` in the chat, or `llm.follow = true` to start with it on), the editor goes where Claude is
+reading while it works. Each file it reads opens with the cursor on the first line read, centered, and those lines
+get a faint accent wash. A search jumps to its first hit, and the finished answer takes you to its first
+`path:line`. A card beside the code shows what Claude is doing (`● reading  src/llm.rs  L230–249`) and its latest
+thinking. Claude's thinking arrives as summaries, and the chat keeps each one as a folded italic aside.
+
+Files opened along the way are previews: unedited ones close when follow moves on. Moving the cursor, switching
+files, or scrolling in the editor takes over: following pauses (`claude › paused`) until `C-f` or your next
+question. `C-o` jumps back to where you were before the turn.
 
 An empty conversation shows a short guide and example questions you can pick with `tab`
 ([hanji theme](screenshots/m4-chat-hanji.png)).
