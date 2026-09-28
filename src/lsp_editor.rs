@@ -109,6 +109,10 @@ pub enum Kind {
     ExecuteCommand,
     Rename,
     Format,
+    /// `:w` with format-on-save: format, then save (and quit for `:wq`).
+    FormatSave {
+        quit: bool,
+    },
     Completion,
     /// Docs/extra edits for item `index` of completion list `list`.
     ResolveCompletion {
@@ -287,6 +291,10 @@ impl Editor {
                         self.class_file_reply(cid, uri.clone(), pos, error, result)
                     }
                     Kind::InlayHint { range } => self.on_inlay(cid, &p, *range, result),
+                    // The server couldn't format — save as is
+                    &Kind::FormatSave { quit } if error.is_some() => {
+                        self.format_save_done(p.doc, quit, Some("the server couldn't format — saved as is"))
+                    }
                     Kind::SignatureHelp => self.on_signature(&p, result, error.is_some()),
                     Kind::Completion => {
                         self.lsp.completion_inflight = false;
@@ -458,6 +466,10 @@ impl Editor {
         );
         let moved = self.doc().id != p.doc || doc.selection().primary().cursor(&doc.text) != p.head;
         if (version_bound && doc.version() != p.version) || (cursor_bound && moved) {
+            // Typed on after :w — save what's there now, unformatted (a save is never lost)
+            if let Kind::FormatSave { quit } = p.kind {
+                return self.format_save_done(p.doc, quit, Some("changed while formatting — saved as is"));
+            }
             if p.kind == Kind::ResolveAction {
                 self.set_status("code action dropped — the file changed meanwhile");
             }
@@ -527,6 +539,12 @@ impl Editor {
                 Ok(n) => self.set_status(format!("renamed in {n} file(s)")),
                 Err(e) => self.set_error(format!("rename: {e}")),
             },
+            Kind::FormatSave { quit } => {
+                let edits = result.as_array().cloned().unwrap_or_default();
+                let why =
+                    self.apply_text_edits(p.doc, enc, &edits).err().map(|e| format!("not formatted: {e}"));
+                self.format_save_done(p.doc, quit, why.as_deref());
+            }
             Kind::Format => {
                 let edits = result.as_array().cloned().unwrap_or_default();
                 if edits.is_empty() {
@@ -1334,6 +1352,57 @@ impl Editor {
         );
     }
 
+    /// `:w` / `:wq` with format-on-save: ask the server to format and save when it answers — true if
+    /// asked (the caller then doesn't save). A slow server gets 2 s, then the file is saved as is.
+    pub fn format_then_save(&mut self, quit: bool) -> bool {
+        let doc = self.doc();
+        let (Some(path), Some(cid)) = (doc.path.clone(), doc.lsp.client) else { return false };
+        if !self.config.format_on_save || doc.loading || doc.virtual_uri.is_some() {
+            return false;
+        }
+        let can = self.client(cid).is_some_and(|c| {
+            let cap = &c.caps["documentFormattingProvider"];
+            c.ready && !cap.is_null() && *cap != json!(false)
+        });
+        if !can {
+            return false;
+        }
+        self.lsp_flush();
+        let tab = self.config.tab_width;
+        let params = json!({
+            "textDocument": { "uri": lsp::uri(&path) },
+            "options": { "tabSize": tab, "insertSpaces": true },
+        });
+        let Some(id) = self.lsp_send(cid, Kind::FormatSave { quit }, "textDocument/formatting", params)
+        else {
+            return false;
+        };
+        let doc_id = self.doc().id;
+        self.note("formatting…");
+        self.events.jobs().spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            move |ed: &mut Editor| {
+                if ed.lsp.pending.remove(&(cid, id)).is_some() {
+                    ed.format_save_done(doc_id, quit, Some("the formatter took too long — saved as is"));
+                }
+            }
+        });
+        true
+    }
+
+    /// Formatting settled (or gave up with `why`): save the document, then quit for `:wq`.
+    fn format_save_done(&mut self, id: DocId, quit: bool, why: Option<&str>) {
+        if let Err(e) = crate::typed::save_doc(self, id, false) {
+            return self.set_error(e);
+        }
+        if let Some(why) = why {
+            self.set_warning(why.to_string());
+        }
+        if quit && let Err(e) = crate::typed::quit(self, false) {
+            self.set_error(e);
+        }
+    }
+
     /// `g d`·`g D`·`g y`·`g i`·`g r` — asks only a server that says it can answer.
     pub fn goto_location(&mut self, goto: Goto) {
         let Some(cid) = self.ready_client() else { return };
@@ -1964,6 +2033,43 @@ mod tests {
         assert_eq!(ed.doc().selection().primary(), Range::point(11));
         feed(&mut ed, "<C-o>");
         assert_eq!(ed.doc().selection().primary(), Range::point(6), "back on `T`");
+        std::fs::remove_dir_all(file.parent().unwrap()).ok();
+    }
+
+    /// `:w` formats first, then saves; a server error or an edit made meanwhile still saves (as is); a
+    /// server that can't format saves right away.
+    #[test]
+    fn format_on_save() {
+        let (mut ed, file, log) = setup("fmtsave", "fn main() {\n    let x = 1;\n}\n");
+        let cid = ed.doc().lsp.client.unwrap();
+        let caps = json!({ "positionEncoding": "utf-8", "documentFormattingProvider": true });
+        ed.on_lsp_message(cid, json!({ "id": 0, "result": { "capabilities": caps } }));
+        let disk = || std::fs::read_to_string(&file).unwrap();
+        let two = json!([{ "range": { "start": { "line": 1, "character": 0 }, "end": { "line": 1, "character": 4 } }, "newText": "  " }]);
+        feed(&mut ed, "ggA//<esc>:w<ret>");
+        assert!(sent(&log).contains(r#""method":"textDocument/formatting""#));
+        assert_eq!(disk(), "fn main() {\n    let x = 1;\n}\n", "not saved before the answer");
+        ed.on_lsp_message(
+            cid,
+            json!({ "id": pending_of(&ed, Kind::FormatSave { quit: false }), "result": two }),
+        );
+        assert_eq!(disk(), "fn main() {//\n  let x = 1;\n}\n", "formatted, then saved");
+        assert!(!ed.doc().is_modified());
+        // Server error → saved as is
+        feed(&mut ed, "A!<esc>:w<ret>");
+        let id = pending_of(&ed, Kind::FormatSave { quit: false });
+        ed.on_lsp_message(cid, json!({ "id": id, "error": { "message": "no" } }));
+        assert_eq!(disk(), "fn main() {//!\n  let x = 1;\n}\n");
+        // Typed on while formatting → the reply is stale, what's there is saved
+        feed(&mut ed, "A?<esc>:w<ret>A#<esc>");
+        let id = pending_of(&ed, Kind::FormatSave { quit: false });
+        ed.on_lsp_message(cid, json!({ "id": id, "result": two }));
+        assert_eq!(disk(), "fn main() {//!?#\n  let x = 1;\n}\n");
+        // No formatter → saved right away
+        let caps = json!({ "positionEncoding": "utf-8" });
+        ed.lsp.clients[0].caps = caps;
+        feed(&mut ed, "A%<esc>:w<ret>");
+        assert_eq!(disk(), "fn main() {//!?#%\n  let x = 1;\n}\n");
         std::fs::remove_dir_all(file.parent().unwrap()).ok();
     }
 

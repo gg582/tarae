@@ -198,6 +198,13 @@ pub static SETTINGS: &[Setting] = &[
         set: |c, v| c.soft_wrap = v.as_str().unwrap_or("prose").to_string(),
     },
     Setting {
+        path: "editor.format-on-save",
+        kind: Kind::Bool,
+        doc: ":w formats with the language server first (saves as is if it can't within 2 s)",
+        get: |c| Value::from(c.format_on_save),
+        set: |c, v| c.format_on_save = b(v),
+    },
+    Setting {
         path: "editor.auto-pairs",
         kind: Kind::Bool,
         doc: "Typing ( [ { \" ' ` adds the closer; typing the closer steps over it; backspace removes both",

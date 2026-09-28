@@ -182,7 +182,8 @@ cursor or document moved on are dropped.
   (`editor.inlay-hints`, [screenshot](screenshots/m3-inlay-hints.png))
 - **Code actions** `space a` — quick fixes first, and a diff on the right shows exactly what each one will change before
   you pick it, across files ([screenshot](screenshots/m3-code-action-preview.png))
-- `space r` rename across files · `:format` · server-sent edits, including creating, moving, and deleting files — one undo
+- `space r` rename across files · `:format`, and `:w` formats first (`editor.format-on-save`; a slow or failing server
+  gets 2 s, then the file is saved as is) · server-sent edits, including creating, moving, and deleting files — one undo
   step per file
 - `gd` definition · `gD` declaration · `gy` type definition · `gi` implementation · `gr` references · `space k` hover
   — docs render as Markdown with code in its own colors ([screenshot](screenshots/m3-hover.png))

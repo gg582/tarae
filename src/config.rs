@@ -58,6 +58,8 @@ pub struct EditorConfig {
     pub auto_pairs: bool,
     /// Long lines as several rows: "prose" (Markdown, commit messages, plain text) | "always" | "never".
     pub soft_wrap: String,
+    /// `:w` asks the language server to format first (lsp_editor.rs `format_then_save`).
+    pub format_on_save: bool,
     /// Auto-save: "off" | "focus" (when the terminal loses focus) | "idle" (+ after 2 s without input).
     pub auto_save: String,
     /// On save, record the undo history; restore it on reopen (`undofile.rs`).
@@ -94,6 +96,7 @@ impl Default for EditorConfig {
             cursor_diagnostics: true,
             auto_pairs: true,
             soft_wrap: "prose".into(),
+            format_on_save: true,
             auto_save: "focus".into(),
             persistent_undo: true,
             agent_claude_code: true,

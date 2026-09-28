@@ -12,6 +12,7 @@ pub fn execute(editor: &mut Editor, line: &str) -> Result<(), String> {
     let rest = rest.trim();
     match cmd {
         "" => Ok(()),
+        "w" | "write" if rest.is_empty() && editor.format_then_save(false) => Ok(()),
         "w" | "write" => write(editor, rest, false),
         "w!" | "write!" => write(editor, rest, true),
         "reload" => editor.reload_current(),
@@ -68,6 +69,7 @@ pub fn execute(editor: &mut Editor, line: &str) -> Result<(), String> {
         "q" | "quit" if editor.close_view() => Ok(()),
         "q" | "quit" | "qa" | "quit-all" => quit(editor, false),
         "q!" | "quit!" | "qa!" | "quit-all!" => quit(editor, true),
+        "wq" | "x" | "write-quit" if rest.is_empty() && editor.format_then_save(true) => Ok(()),
         "wq" | "x" | "write-quit" => {
             write(editor, rest, false)?;
             quit(editor, false)
@@ -251,17 +253,29 @@ fn write(editor: &mut Editor, path: &str, force: bool) -> Result<(), String> {
             editor.attach_lsp(id);
             editor.git_load_base(id);
         }
-        None => editor.doc_mut().save_as(force).map_err(|e| format!("{e:#}"))?,
+        None => return save_doc(editor, id, force),
     }
-    let doc = editor.doc();
+    saved(editor, id);
+    Ok(())
+}
+
+/// Save document `id` to its own path (also when it isn't the current one — format-on-save finishes later).
+pub(crate) fn save_doc(editor: &mut Editor, id: crate::document::DocId, force: bool) -> Result<(), String> {
+    let doc = editor.docs.iter_mut().find(|d| d.id == id).ok_or("the buffer was closed")?;
+    doc.save_as(force).map_err(|e| format!("{e:#}"))?;
+    saved(editor, id);
+    Ok(())
+}
+
+fn saved(editor: &mut Editor, id: crate::document::DocId) {
+    let Some(doc) = editor.docs.iter().find(|d| d.id == id) else { return };
     let msg = format!("Saved {} · {} lines", doc.display_name(), doc.text.len_lines());
     editor.set_success(msg);
     editor.lsp_did_save(id);
     editor.undo_persist(id);
-    Ok(())
 }
 
-fn quit(editor: &mut Editor, force: bool) -> Result<(), String> {
+pub(crate) fn quit(editor: &mut Editor, force: bool) -> Result<(), String> {
     if !force {
         let dirty: Vec<String> = editor
             .docs
