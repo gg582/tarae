@@ -8,7 +8,7 @@ Claude Code login as it is. You need [Claude Code](https://claude.com/claude-cod
 logged in.
 
 - [Select → instruct → diff](#select--instruct--diff)
-- [Chat panel](#chat-panel)
+- [Chat panel](#chat-panel) — [follow mode](#follow-mode), [notes](#notes)
 - [Claude Code integration](#claude-code-integration)
 - [Settings](#settings)
 
@@ -85,6 +85,26 @@ question. `C-o` jumps back to where you were before the turn.
 
 An empty conversation shows a short guide and example questions you can pick with `tab`
 ([hanji theme](screenshots/m4-chat-hanji.png)).
+
+### Notes
+
+Claude can pin **notes** to lines of code: a bug, a risk, or a question tied to specific lines. A note shows as
+`¶ first words` at the end of its line, and with the cursor on those lines a card shows the whole thread. Notes
+ride edits (lines added above push them down) and last for the session.
+
+Talk back right there: `space n` on a note line replies. Your reply goes to Claude together with those lines and
+the thread so far, and Claude answers on the thread. `space n` on a line without a note asks Claude about that
+line (or the selected lines), which starts a new note with your question.
+
+| Key | Notes |
+|---|---|
+| `space n` | Reply to the note here, or ask Claude about this line |
+| `]n` / `[n` | Next / previous note, across files |
+| `space N` | Every note, with a preview |
+| `:note-close` / `:notes-clear` | Close the note here / all of them |
+
+Under the hood the chat process gets tarae's own `note` tool: an MCP server that lives inside tarae and speaks
+over the same stream as the conversation, so no server or port is involved.
 
 ## Claude Code integration
 

@@ -191,6 +191,10 @@ commands! {
         test_close => "Close the test panel",
         goto_next_test_failure => "Next failed test",
         goto_prev_test_failure => "Previous failed test",
+        note_here => "Ask Claude here, or reply",
+        note_picker => "Claude's notes",
+        goto_next_note => "Next note",
+        goto_prev_note => "Previous note",
         claude_code => "Open Claude Code beside (connected)",
         claude_code_mention => "Send selection to Claude Code (@)",
         dap_edit_condition => "Break only when… (condition)",
@@ -1723,6 +1727,22 @@ fn goto_next_test_failure(cx: &mut Context) {
 
 fn goto_prev_test_failure(cx: &mut Context) {
     cx.editor.test_failure_step(false);
+}
+
+fn note_here(cx: &mut Context) {
+    crate::notes::start(cx.editor);
+}
+
+fn note_picker(cx: &mut Context) {
+    crate::notes::picker(cx.editor);
+}
+
+fn goto_next_note(cx: &mut Context) {
+    crate::notes::step(cx.editor, true);
+}
+
+fn goto_prev_note(cx: &mut Context) {
+    crate::notes::step(cx.editor, false);
 }
 
 fn test_close(cx: &mut Context) {

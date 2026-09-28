@@ -126,6 +126,7 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `[ d` | `goto_prev_diag` | Previous diagnostic |
 | `[ f` | `goto_prev_function` | Previous function |
 | `[ g` | `goto_prev_change` | Previous git change |
+| `[ n` | `goto_prev_note` | Previous note |
 | `[ p` | `goto_prev_paragraph` | Previous paragraph |
 | `[ t` | `goto_prev_class` | Previous type |
 | `[ T` | `goto_prev_test` | Previous test |
@@ -141,6 +142,7 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `] d` | `goto_next_diag` | Next diagnostic |
 | `] f` | `goto_next_function` | Next function |
 | `] g` | `goto_next_change` | Next git change |
+| `] n` | `goto_next_note` | Next note |
 | `] p` | `goto_next_paragraph` | Next paragraph |
 | `] t` | `goto_next_class` | Next type |
 | `] T` | `goto_next_test` | Next test |
@@ -247,6 +249,8 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `space k` | `hover` | Show docs under cursor |
 | `space l` | `chat_open` | Chat with Claude |
 | `space L` | `chat_close` | Close chat |
+| `space n` | `note_here` | Ask Claude here, or reply |
+| `space N` | `note_picker` | Claude's notes |
 | `space p` | `paste_clipboard_after` | Paste clipboard after |
 | `space P` | `paste_clipboard_before` | Paste clipboard before |
 | `space r` | `rename_symbol` | Rename symbol |
@@ -408,6 +412,8 @@ Type `:` in normal mode. `Tab` completes command names and their arguments (path
 | `:chat` |  | Open the Claude chat (optionally send a message) |
 | `:chat-close` |  | Close the Claude chat |
 | `:chat-new` |  | Start a new Claude chat |
+| `:note-close` |  | Close Claude's note on this line |
+| `:notes-clear` |  | Close all of Claude's notes |
 | `:attach` |  | Attach the debugger to a running program (name or host:port) |
 | `:watch` |  | Watch an expression while debugging |
 | `:unwatch` |  | Stop watching (no expression = all) |

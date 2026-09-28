@@ -34,10 +34,15 @@ cursor line, selection, diagnostics and the other open files. Files marked unsav
 text given in the context over what Read returns. When you point at code, cite it as path:line (relative to the \
 project root) — the user can jump there. Answer concisely in Markdown. Put code in fenced blocks with a language \
 tag. When the user asks to change the selection, reply with the complete replacement for the selection in a \
-single code block (the editor can apply it).";
+single code block (the editor can apply it). \
+You can pin notes to code with the note tool — they show beside those lines and the user can answer there. Use \
+them for remarks tied to specific lines (a bug, a risk, a question), a few at most, and keep the chat answer as the \
+summary. A message with <note id=N> is the user talking to you at that note: answer with note(reply_to=N, text) — \
+one to three sentences — and keep any chat text to one short line.";
 
-/// The tools the chat process gets — reading only.
+/// The tools the chat process gets — reading only; plus tarae's own (`note`), allowed up front.
 const TOOLS: &str = "Read,Grep,Glob";
+const ALLOWED: &str = "Read,Grep,Glob,mcp__tarae__note";
 
 /// Example questions filled in with Tab in an empty chat.
 pub const SUGGESTIONS: [&str; 3] = [
@@ -166,6 +171,16 @@ impl Chat {
         }
     }
 
+    #[cfg(test)]
+    pub fn proc_alive(&self) -> bool {
+        self.proc.is_some()
+    }
+
+    #[cfg(test)]
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
     pub fn busy(&self) -> bool {
         self.state != State::Idle
     }
@@ -267,7 +282,7 @@ fn ensure_proc(ed: &mut Editor) {
     if c.proc.is_some() {
         return;
     }
-    let cfg = llm::LlmConfig { args: llm::with_tools(&cfg.args, TOOLS), ..cfg };
+    let cfg = llm::LlmConfig { args: llm::with_tools(&cfg.args, TOOLS, ALLOWED), ..cfg };
     let mut extra = vec!["--append-system-prompt", SYSTEM];
     if !c.no_thought_flag {
         extra.extend(["--thinking-display", "summarized"]);
@@ -279,7 +294,9 @@ fn ensure_proc(ed: &mut Editor) {
             return;
         }
     };
-    let Some(stdin) = child.stdin.take() else { return };
+    let Some(mut stdin) = child.stdin.take() else { return };
+    // tarae's MCP server (the note tool) — registered before anything else is said
+    let _ = writeln!(stdin, "{}", llm::initialize_message(&["tarae"])).and_then(|_| stdin.flush());
     // A fresh process has seen no file yet
     c.sent.clear();
     c.generation += 1;
@@ -314,13 +331,28 @@ fn on_event(ed: &mut Editor, generation: u64, ev: StreamEv) {
                 return;
             }
             c.state = State::Thinking;
-            let look = look(&name, &input);
+            let mut look = look(&name, &input);
+            // A reply points at its note
+            if let Some(n) =
+                input["reply_to"].as_u64().and_then(|id| ed.notes.list.iter().find(|n| n.id == id))
+            {
+                look.link = Some(Link { path: n.path.clone(), line: n.lines.start });
+            }
             c.msgs.push(Msg::tool(look.clone()));
             crate::follow::on_tool(ed, &id, &name, &input, &look);
         }
         StreamEv::ToolResult { id, text } => {
             if c.state != State::Idle {
                 crate::follow::on_result(ed, &id, &text);
+            }
+        }
+        StreamEv::Control { request_id, request } => {
+            let response = control(ed, &request);
+            if let Some(c) = ed.chat.as_mut().filter(|c| c.generation == generation)
+                && let Some(p) = &mut c.proc
+            {
+                let line = llm::control_response(&request_id, response);
+                let _ = writeln!(p.stdin, "{line}").and_then(|_| p.stdin.flush());
             }
         }
         StreamEv::Text(t) => {
@@ -336,6 +368,7 @@ fn on_event(ed: &mut Editor, generation: u64, ev: StreamEv) {
         StreamEv::Done(r) => {
             let secs = c.started.elapsed().as_secs_f32();
             c.state = State::Idle;
+            let ok = r.is_ok();
             match r {
                 // Answers with no streamed pieces (short answers, CLIs without partials) get the final text
                 Ok(text) => {
@@ -350,6 +383,13 @@ fn on_event(ed: &mut Editor, generation: u64, ev: StreamEv) {
                 }
             }
             crate::follow::on_done(ed);
+            let answer = ok.then(|| {
+                ed.chat.as_ref().and_then(|c| {
+                    let turn = c.msgs.iter().rposition(|m| m.role == Role::User).map_or(0, |i| i + 1);
+                    c.msgs[turn..].iter().rev().find(|m| m.role == Role::Assistant).map(|m| m.text.clone())
+                })
+            });
+            crate::notes::turn_done(ed, answer.flatten());
         }
         StreamEv::Exit(err) => {
             c.proc = None;
@@ -365,6 +405,11 @@ fn on_event(ed: &mut Editor, generation: u64, ev: StreamEv) {
             }
             if c.state != State::Idle {
                 c.state = State::Idle;
+                if let Some(n) =
+                    ed.notes.turn.take().and_then(|id| ed.notes.list.iter_mut().find(|n| n.id == id))
+                {
+                    n.waiting = false;
+                }
                 let e = if err.is_empty() {
                     "claude exited".to_string()
                 } else {
@@ -381,31 +426,82 @@ fn on_event(ed: &mut Editor, generation: u64, ev: StreamEv) {
 pub fn send(ed: &mut Editor) {
     let Some(c) = &ed.chat else { return };
     let question = c.input.trim().to_string();
-    if question.is_empty() || c.busy() {
-        return;
+    if !question.is_empty() && submit(ed, &question, None, None) {
+        let c = ed.chat.as_mut().expect("just sent");
+        c.input.clear();
+        c.cursor = 0;
+    }
+}
+
+/// Sends `question` as the next turn — with the editor context, plus `about` (a note's lines and thread;
+/// `chip` then replaces the context summary). False if it couldn't go (busy, no process).
+pub fn submit(ed: &mut Editor, question: &str, about: Option<String>, chip: Option<String>) -> bool {
+    if ed.chat.as_ref().is_none_or(Chat::busy) {
+        return false;
     }
     // Process first — a newly spawned one clears `sent`, so the context carries the whole file again
     ensure_proc(ed);
-    let (context, chip, sent) = context(ed);
-    let Some(c) = &mut ed.chat else { return };
-    let Some(p) = &mut c.proc else { return };
-    let content = format!("{context}\n\n{question}");
+    let (context, ctx_chip, sent) = context(ed);
+    let Some(c) = &mut ed.chat else { return false };
+    let Some(p) = &mut c.proc else { return false };
+    let content = match about {
+        Some(a) => format!("{context}\n{a}\n\n{question}"),
+        None => format!("{context}\n\n{question}"),
+    };
     let ok = writeln!(p.stdin, "{}", llm::user_message(&content)).and_then(|_| p.stdin.flush());
     if let Err(e) = ok {
         c.kill();
         c.msgs.push(Msg::new(Role::Note, format!("claude: {e} — press enter to retry"), ""));
-        return;
+        return false;
     }
     c.sent.extend(sent);
     c.hop = 0;
     c.follow.new_turn();
     c.unfolded = false;
-    c.msgs.push(Msg::new(Role::User, question, chip));
-    c.input.clear();
-    c.cursor = 0;
+    c.msgs.push(Msg::new(Role::User, question, chip.unwrap_or(ctx_chip)));
     c.scroll = 0;
     c.state = State::Thinking;
     c.started = Instant::now();
+    true
+}
+
+/// A control request from claude → our answer. `mcp_message` = tarae's MCP server (the `note` tool).
+fn control(ed: &mut Editor, req: &serde_json::Value) -> serde_json::Value {
+    use serde_json::json;
+    if req["subtype"] != "mcp_message" || req["server_name"] != "tarae" {
+        return json!({});
+    }
+    let msg = &req["message"];
+    // Notifications get the empty answer the SDK gives
+    let Some(id) = msg.get("id").cloned() else {
+        return json!({ "mcp_response": { "jsonrpc": "2.0", "result": {}, "id": 0 } });
+    };
+    let result = match msg["method"].as_str().unwrap_or_default() {
+        "initialize" => Ok(json!({
+            "protocolVersion": msg["params"]["protocolVersion"].as_str().unwrap_or("2025-06-18"),
+            "capabilities": { "tools": {} },
+            "serverInfo": { "name": "tarae", "version": env!("CARGO_PKG_VERSION") },
+        })),
+        "tools/list" => Ok(json!({ "tools": [crate::notes::tool_schema()] })),
+        "tools/call" => {
+            let params = &msg["params"];
+            let r = match params["name"].as_str() {
+                Some("note") => crate::notes::tool_call(ed, &params["arguments"]),
+                other => Err(format!("no tool {}", other.unwrap_or_default())),
+            };
+            Ok(match r {
+                Ok(t) => json!({ "content": [{ "type": "text", "text": t }] }),
+                Err(e) => json!({ "content": [{ "type": "text", "text": e }], "isError": true }),
+            })
+        }
+        "ping" => Ok(json!({})),
+        m => Err(json!({ "code": -32601, "message": format!("no method {m}") })),
+    };
+    let response = match result {
+        Ok(r) => json!({ "jsonrpc": "2.0", "id": id, "result": r }),
+        Err(e) => json!({ "jsonrpc": "2.0", "id": id, "error": e }),
+    };
+    json!({ "mcp_response": response })
 }
 
 pub fn stop(ed: &mut Editor) {
@@ -541,6 +637,25 @@ fn look(name: &str, input: &serde_json::Value) -> Look {
         "Glob" => {
             Look { verb: "find", what: s("pattern"), pattern: true, range: within(s("path")), link: None }
         }
+        "mcp__tarae__note" => {
+            let gist = s("text").lines().next().unwrap_or_default().to_string();
+            let gist = if gist.chars().count() > 48 {
+                format!("{}…", gist.chars().take(47).collect::<String>())
+            } else {
+                gist
+            };
+            match n("reply_to") {
+                Some(id) => {
+                    Look { verb: "reply", what: format!("#{id}"), pattern: false, range: gist, link: None }
+                }
+                None => {
+                    let path = resolve(&s("path"));
+                    let line = n("line").unwrap_or(1).max(1) - 1;
+                    let what = format!("{}:{}", shown(&path), line + 1);
+                    Look { verb: "note", what, pattern: false, range: gist, link: Some(Link { path, line }) }
+                }
+            }
+        }
         other => {
             Look { verb: "use", what: other.to_string(), pattern: false, range: String::new(), link: None }
         }
@@ -548,12 +663,12 @@ fn look(name: &str, input: &serde_json::Value) -> Look {
 }
 
 /// Relative to the project root when inside it.
-fn shown(p: &Path) -> String {
+pub fn shown(p: &Path) -> String {
     let cwd = std::env::current_dir().unwrap_or_default();
     p.strip_prefix(&cwd).unwrap_or(p).display().to_string()
 }
 
-fn resolve(p: &str) -> PathBuf {
+pub fn resolve(p: &str) -> PathBuf {
     let p = Path::new(p);
     if p.is_absolute() { p.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(p) }
 }
@@ -747,7 +862,7 @@ mod tests {
         let log = dir.join("stdin.log");
         let result = serde_json::json!({"type": "result", "result": "ok"}).to_string();
         let script = format!(
-            "read -r line; printf '%s\\n' \"$line\" >> '{}'; printf '%s\\n' '{result}'",
+            "read -r init; read -r line; printf '%s\\n' \"$line\" >> '{}'; printf '%s\\n' '{result}'",
             log.display()
         );
         let mut ed = editor("fn main() {}\n");

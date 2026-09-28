@@ -33,6 +33,7 @@ mod lsp;
 mod lsp_editor;
 mod markdown;
 mod movement;
+mod notes;
 mod offer;
 mod pairs;
 mod picker;

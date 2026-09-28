@@ -64,7 +64,7 @@ debuggers are the usual external tools: see [Language support](docs/languages.md
 | [Language servers](docs/features.md#language-servers) | Diagnostics, completion, signature help, inlay hints, code actions with a diff preview, rename, symbols — and [Java](docs/features.md#java) via jdtls |
 | [Tests](docs/testing-and-debugging.md#tests) | Run or debug the test at the cursor; failures marked on their line — Rust, Go, Python, Java |
 | [Debugger](docs/testing-and-debugging.md#debugger) | DAP for Rust, C/C++, Go, Python, Java — inline values, conditions, logpoints, watches, [attach](docs/testing-and-debugging.md#attaching-to-a-running-program) |
-| [Claude](docs/claude-integration.md) | Select → instruct → diff, a chat panel with your code as context, Claude Code in a side pane |
+| [Claude](docs/claude-integration.md) | Select → instruct → diff; a chat where Claude reads your project while the editor follows along and pins notes on the code you answer in place; Claude Code in a side pane |
 
 ![Chat panel — ask with the selection as context; code in answers sits in a well in its language's colors](docs/screenshots/m4-chat.png)
 

@@ -110,10 +110,12 @@ impl Editor {
         self.prune_marks();
     }
 
-    /// Documents keep only the marks some pane's list still points at.
+    /// Documents keep only the marks some pane's list (or a note) still points at.
     fn prune_marks(&mut self) {
-        let live: std::collections::HashSet<Jump> =
+        let mut live: std::collections::HashSet<Jump> =
             self.views.iter().flat_map(|v| v.jumps.iter().copied()).collect();
+        // Notes sit on marks too
+        live.extend(crate::notes::marks(self).into_iter().map(|(doc, mark)| Jump { doc, mark }));
         for d in &mut self.docs {
             let id = d.id;
             d.retain_marks(|mark| live.contains(&Jump { doc: id, mark }));

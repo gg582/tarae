@@ -2,7 +2,8 @@
 //! beside the code says what it is thinking (`C-f` in the chat · `llm.follow`).
 //!
 //! - Read → that file, cursor on the first line read, centered; the lines read get a faint accent wash.
-//!   Grep in content mode → its first hit (from the tool result). The answer's first `path:line` at the end.
+//!   Grep in content mode → its first hit (from the tool result). A note → its lines (its card opens there).
+//!   The answer's first `path:line` at the end.
 //! - Files follow opened are previews: unedited ones close when it moves on (they stay once the turn ends).
 //! - The user wins: moving the cursor or switching files in the editor pauses following until `C-f` or
 //!   the next question. `C-o` goes back to where you were before the turn (one jump point per turn).
@@ -80,6 +81,14 @@ pub fn on_tool(ed: &mut Editor, id: &str, name: &str, input: &serde_json::Value,
             let lines = n("offset").or(n("limit")).map(|_| from..from + n("limit").unwrap_or(2000));
             (look.link.as_ref().map(|l| l.path.clone()), lines, from)
         }
+        // A note (or a reply on one): to its lines — the card shows there
+        "mcp__tarae__note" => match &look.link {
+            Some(l) => {
+                let end = input["end_line"].as_u64().map_or(l.line + 1, |e| (e as usize).max(l.line + 1));
+                (Some(l.path.clone()), Some(l.line..end), l.line)
+            }
+            None => (None, None, 0),
+        },
         _ => (None, None, 0),
     };
     f.gaze = Some(Gaze { look: look.clone(), path: path.clone(), lines });

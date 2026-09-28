@@ -113,6 +113,21 @@ pub fn user_message(content: &str) -> String {
     serde_json::json!({"type": "user", "message": {"role": "user", "content": content}}).to_string()
 }
 
+/// The first line to a chat process: registers tarae's own MCP server (`sdkMcpServers` — its messages come
+/// back as `mcp_message` control requests).
+pub fn initialize_message(servers: &[&str]) -> String {
+    serde_json::json!({"type": "control_request", "request_id": "tarae-init",
+        "request": {"subtype": "initialize", "sdkMcpServers": servers}})
+    .to_string()
+}
+
+/// Our answer to a control request from claude.
+pub fn control_response(request_id: &str, response: serde_json::Value) -> String {
+    serde_json::json!({"type": "control_response",
+        "response": {"subtype": "success", "request_id": request_id, "response": response}})
+    .to_string()
+}
+
 /// Control request that stops the running turn — the process and conversation memory remain.
 pub fn interrupt_message() -> String {
     serde_json::json!({"type": "control_request", "request_id": "tarae-stop", "request": {"subtype": "interrupt"}})
@@ -141,6 +156,8 @@ pub enum StreamEv {
     Tool { id: String, name: String, input: serde_json::Value },
     /// What a tool returned (its first 4 KB — enough to see where a search landed).
     ToolResult { id: String, text: String },
+    /// claude asks the host something (`mcp_message` for tarae's own tools) — needs a `control_response`.
+    Control { request_id: String, request: serde_json::Value },
     /// End of a turn — final text or error (not logged in·stopped etc.).
     Done(Result<String, String>),
     /// The process exited (for the chat panel — last stderr line).
@@ -218,6 +235,12 @@ pub fn pump(
                             }
                         }
                     }
+                    // Answered on the main loop (text streamed before it goes first)
+                    Some(c @ StreamEv::Control { .. }) => {
+                        if !flush(&mut pending, pending_thought) || !send(c) {
+                            break;
+                        }
+                    }
                     Some(StreamEv::Thinking) if !thinking_sent => {
                         thinking_sent = true;
                         send(StreamEv::Thinking);
@@ -284,9 +307,9 @@ fn tool_events(ev: &serde_json::Value) -> Vec<StreamEv> {
     }
 }
 
-/// `args` with its `--tools <list>` swapped for `tools` (read-only ones for the chat panel) — also allowed
-/// up front, so `-p` never stops to ask.
-pub fn with_tools(args: &[String], tools: &str) -> Vec<String> {
+/// `args` with its `--tools <list>` swapped for `tools` (read-only ones for the chat panel), and `allowed`
+/// (those + tarae's own MCP tools) allowed up front, so `-p` never stops to ask.
+pub fn with_tools(args: &[String], tools: &str, allowed: &str) -> Vec<String> {
     let mut out = Vec::with_capacity(args.len() + 4);
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -296,12 +319,16 @@ pub fn with_tools(args: &[String], tools: &str) -> Vec<String> {
             out.push(a.clone());
         }
     }
-    out.extend(["--tools", tools, "--allowedTools", tools].map(String::from));
+    out.extend(["--tools", tools, "--allowedTools", allowed].map(String::from));
     out
 }
 
 fn parse_line(ev: &serde_json::Value) -> Option<StreamEv> {
     match ev["type"].as_str()? {
+        "control_request" => Some(StreamEv::Control {
+            request_id: ev["request_id"].as_str()?.to_string(),
+            request: ev["request"].clone(),
+        }),
         "stream_event" => {
             let delta = &ev["event"]["delta"];
             match delta["type"].as_str()? {
@@ -646,7 +673,12 @@ pub fn ask(ed: &mut Editor, instruction: &str) -> Result<(), String> {
                 Box::new(move |ed: &mut Editor| on_result(ed, generation, result))
             }
             // ask runs without tools
-            StreamEv::Tool { .. } | StreamEv::ToolResult { .. } | StreamEv::Exit(_) => return None,
+            StreamEv::Tool { .. }
+            | StreamEv::ToolResult { .. }
+            | StreamEv::Control { .. }
+            | StreamEv::Exit(_) => {
+                return None;
+            }
         })
     });
     Ok(())
@@ -985,11 +1017,12 @@ mod tests {
 
     #[test]
     fn chat_tools_replace_the_no_tools_default() {
-        let args = with_tools(&LlmConfig::default().args, "Read,Grep,Glob");
+        let args =
+            with_tools(&LlmConfig::default().args, "Read,Grep,Glob", "Read,Grep,Glob,mcp__tarae__note");
         let at = |f: &str| args.iter().position(|a| a == f).unwrap();
         assert_eq!(args.iter().filter(|a| *a == "--tools").count(), 1);
         assert_eq!(args[at("--tools") + 1], "Read,Grep,Glob");
-        assert_eq!(args[at("--allowedTools") + 1], "Read,Grep,Glob");
+        assert_eq!(args[at("--allowedTools") + 1], "Read,Grep,Glob,mcp__tarae__note");
         assert!(args.windows(2).all(|w| w[0] != "--setting-sources" || w[1].is_empty()), "rest kept");
     }
 }

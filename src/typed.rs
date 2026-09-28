@@ -186,6 +186,13 @@ pub fn execute(editor: &mut Editor, line: &str) -> Result<(), String> {
             crate::chat::reset(editor);
             Ok(())
         }
+        "note-close" => crate::notes::close_here(editor),
+        "notes-clear" => {
+            let n = editor.notes.list.len();
+            editor.notes.list.clear();
+            editor.set_status(format!("{n} note{} closed", if n == 1 { "" } else { "s" }));
+            Ok(())
+        }
         n if n.parse::<usize>().is_ok() => {
             editor.goto_line(n.parse::<usize>().unwrap().saturating_sub(1));
             Ok(())

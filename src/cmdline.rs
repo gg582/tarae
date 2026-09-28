@@ -87,6 +87,8 @@ pub const COMMANDS: &[TypedCmd] = &[
     c(&["chat"], Arg::None, "Open the Claude chat (optionally send a message)"),
     c(&["chat-close"], Arg::None, "Close the Claude chat"),
     c(&["chat-new"], Arg::None, "Start a new Claude chat"),
+    c(&["note-close"], Arg::None, "Close Claude's note on this line"),
+    c(&["notes-clear"], Arg::None, "Close all of Claude's notes"),
     c(&["attach"], Arg::None, "Attach the debugger to a running program (name or host:port)"),
     c(&["watch"], Arg::None, "Watch an expression while debugging"),
     c(&["unwatch"], Arg::None, "Stop watching (no expression = all)"),

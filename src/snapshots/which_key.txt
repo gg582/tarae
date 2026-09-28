@@ -9,24 +9,24 @@
 06   5 pub fn word_counts(text: &str) -> HashMap<&str, usize> {
 07   6     let mut counts = HashMap::new();
 08   7     for word in text.split_whitespace() {
-09   8     │   *counts.entry(word).or_insert(0) += 1;
-10   9     }                 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
-11  10     counts              space
-12  11 }
-13  12                         '  Reopen the last picker           j  Jump list
-14  13 fn main() {             /  Search in project                k  Show docs under cursor
-15  14     let text = "the qu  ?  Find a command                   l  Chat with Claude
-16  15     let counts = word_  a  Code actions                     L  Close chat
-17  16     println!("{} disti  b  Open buffer picker               p  Paste clipboard after
-18  17 }                       c  Open Claude Code beside (conn…   P  Paste clipboard before
-19                             C  Send selection to Claude Code…   r  Rename symbol
-20                             d  Diagnostics                      s  Symbols in this file
-21                             D  Diagnostics in every file        S  Symbols in the workspace
-22                             f  Open file picker                 t  Choose a theme (live preview)
-23                             g  Git …                            w  Window …
-24                             G  Debug …                          x  Tests …
-25                             h  Select this symbol's uses        y  Copy to clipboard
-26                             i  Ask Claude to edit selection
+09   8     │   *counts.entry(▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+10   9     }                   space
+11  10     counts
+12  11 }                       '  Reopen the last picker           k  Show docs under cursor
+13  12                         /  Search in project                l  Chat with Claude
+14  13 fn main() {             ?  Find a command                   L  Close chat
+15  14     let text = "the qu  a  Code actions                     n  Ask Claude here, or reply
+16  15     let counts = word_  b  Open buffer picker               N  Claude's notes
+17  16     println!("{} disti  c  Open Claude Code beside (conn…   p  Paste clipboard after
+18  17 }                       C  Send selection to Claude Code…   P  Paste clipboard before
+19                             d  Diagnostics                      r  Rename symbol
+20                             D  Diagnostics in every file        s  Symbols in this file
+21                             f  Open file picker                 S  Symbols in the workspace
+22                             g  Git …                            t  Choose a theme (live preview)
+23                             G  Debug …                          w  Window …
+24                             h  Select this symbol's uses        x  Tests …
+25                             i  Ask Claude to edit selection     y  Copy to clipboard
+26                             j  Jump list
 27                           ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
 28  ▐ NORMAL ▌                                                                   rust   utf-8 LF   1:1
 29                                                                                                space
@@ -41,7 +41,7 @@
 07
 08
 09
-10
+10                           ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
 11                           ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
 12                           ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
 13                           ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
@@ -72,9 +72,9 @@
 07   f
 08   f
 09   f
-10   f
-11  ff                         BBBBB
-12  ff
+10   f                         BBBBB
+11  ff
+12  ff                         A                                   A
 13  ff                         A                                   A
 14  ff                         A                                   A
 15  ff                gggg gg  A                                   A
@@ -84,9 +84,9 @@
 19                             A                                   A
 20                             A                                   A
 21                             A                                   A
-22                             A                                   A
-23                             A  ddd d                            A  dddddd d
-24                             A  ddddd d                          A  ddddd d
+22                             A  ddd d                            A
+23                             A  ddddd d                          A  dddddd d
+24                             A                                   A  ddddd d
 25                             A                                   A
 26                             A
 27

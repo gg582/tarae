@@ -1282,7 +1282,10 @@ fn draw(
     if let (Some(c), Some(at)) = (&editor.completion, text_cursor) {
         draw_completion(c, at, ui, editor, lay, out)?;
     }
-    if let Some(at) = text_cursor {
+    // The note under the cursor comes first; the diagnostic card otherwise
+    if let Some(at) = text_cursor
+        && !draw_note_card(editor, at, ui, lay, out)?
+    {
         draw_diagnostic_card(editor, at, ui, lay, out)?;
     }
     draw_toasts(editor, ui, lay, out)?;
@@ -1384,6 +1387,15 @@ fn draw_text(
                 Some((s, _, n, _)) if d.severity < s => Some((d.severity, msg, n + 1, whole)),
                 Some((s, m, n, w)) => Some((s, m, n + 1, w)),
             };
+        }
+    }
+    // Claude's notes: the line end of each note's first line (ahead of diagnostics — they're rarer and meant)
+    let mut note_at: Vec<Option<&crate::notes::Note>> = vec![None; span];
+    if let Some(p) = doc.path.as_deref() {
+        for n in editor.notes.list.iter().filter(|n| n.path == p) {
+            if let Some(slot) = n.lines.start.checked_sub(top).and_then(|r| note_at.get_mut(r)) {
+                *slot = Some(n);
+            }
         }
     }
     // Failed test sites: same ▲ as the results panel + first message line (ahead of diagnostics — just run)
@@ -1954,9 +1966,36 @@ fn draw_text(
                 }
             }
         }
+        // Line-end note: `  ¶ first words +2` — accent glyph, the text a tone lower, replies faint
+        let note_here = note_at.get(li).copied().flatten();
+        if let Some(n) = note_here
+            && last
+            && !clipped
+        {
+            let used = x0 + col.saturating_sub(row_left) + shift + 1 + extra_used;
+            let room = lay.text_cols.saturating_sub(used + 3);
+            if room >= 8 {
+                let tail = match (n.waiting, n.thread.len()) {
+                    (true, _) => "  · replying…".to_string(),
+                    (false, 1) => String::new(),
+                    (false, k) => format!("  +{}", k - 1),
+                };
+                let body = fit_ellipsis(n.gist(), room.saturating_sub(2 + tail.width()));
+                apply(out, line_base)?;
+                queue!(out, Print("   "))?;
+                apply(out, Style { fg: ui.accent.fg, ..line_base })?;
+                queue!(out, Print("¶ "))?;
+                let fg = blend(ui.accent.fg, line_base.bg.or(ui.tint), 0.62).or(ui.virt.fg);
+                apply(out, Style { fg, italic: true, ..line_base })?;
+                queue!(out, Print(&body))?;
+                apply(out, Style { fg: ui.linenr.fg, ..line_base })?;
+                queue!(out, Print(&tail))?;
+            }
+        }
         // Line-end diagnostic: `  ● message +2` — symbol in severity color, text a tone lower. …if no room
         if let Some((sev, msg, more, whole)) = line_message_here
             && !clipped
+            && note_here.is_none()
         {
             let used = x0 + col.saturating_sub(row_left) + shift + 1 + extra_used;
             let room = lay.text_cols.saturating_sub(used + 3);
@@ -1998,6 +2037,7 @@ fn draw_text(
             && last
             && !clipped
             && line_message_here.is_none()
+            && note_here.is_none()
             && extra_used == 0
             && let Some(b) = editor.blame_here(line)
         {
@@ -4867,12 +4907,13 @@ fn trail_row(
     if slim && w.saturating_sub(1 + head.width() + name.width()) < range.width() {
         range.clear();
     }
-    let room = w.saturating_sub(1 + head.width() + range.width()).max(4);
+    // The target first; the suffix (line range, a note's words) keeps at most 10 cells of its room
+    let room = w.saturating_sub(1 + head.width() + range.width().min(10)).max(4);
     let what = if look.pattern { fit_ellipsis(&name, room) } else { fit_left(&name, room) };
     let mut row = vec![glyph, sp(head, st.faint), sp(what, if look.pattern { st.string } else { st.dim })];
-    if !range.is_empty() {
-        let used: usize = row.iter().map(|s| s.text.width()).sum();
-        row.push(sp(fit(&range, w.saturating_sub(used)), st.faint));
+    let used: usize = row.iter().map(|s| s.text.width()).sum();
+    if w.saturating_sub(used) >= 6 && !range.is_empty() {
+        row.push(sp(fit_ellipsis(&range, w - used), st.faint));
     }
     row
 }
@@ -5327,6 +5368,107 @@ fn underlines(d: &crate::lsp::Diagnostic, pos: usize) -> bool {
 /// The diagnostics under the cursor in full — the line end shows only a first line, cut to fit. A card by
 /// the cursor, only when it sits on an underline whose message the line end didn't show whole, and
 /// nothing else floats (normal/select mode).
+/// The note under the cursor, whole thread, below the cursor (it stays while you type a reply). True if drawn.
+///
+/// ```text
+///   ¶ claude
+///     Lex errors lose their position here — pass the `Span` along.
+///   › you
+///     why not return early?
+///   ▂▅▇ claude is replying…
+///
+///   space n reply   ]n next   space N all
+/// ```
+fn draw_note_card(
+    editor: &Editor,
+    at: (u16, u16),
+    ui: &Ui,
+    lay: &Layout,
+    out: &mut impl Write,
+) -> io::Result<bool> {
+    let replying = matches!(editor.prompt.as_ref().map(|p| p.kind), Some(crate::editor::PromptKind::Note(_)));
+    let busy = editor.mode == Mode::Insert
+        || editor.popup.is_some()
+        || editor.completion.is_some()
+        || editor.signature.is_some()
+        || editor.picker.is_some()
+        || (editor.prompt.is_some() && !replying)
+        || !editor.pending.is_empty();
+    let Some(n) = crate::notes::here(editor).filter(|_| !busy) else { return Ok(false) };
+    let lines = note_lines(n, editor, ui, replying);
+    // Short on room: the newest part (the latest word and the keys) stays in view
+    draw_float(&lines, at, usize::MAX, 18, ui, editor, lay, out).map(|_| true)
+}
+
+/// A note's thread as card lines — who said it (Claude in accent, you dim), the text with `code` colored,
+/// a waiting row while Claude answers, and the keys.
+fn note_lines(
+    n: &crate::notes::Note,
+    editor: &Editor,
+    ui: &Ui,
+    replying: bool,
+) -> Vec<crate::markdown::Line> {
+    use crate::markdown::{Line, Span};
+    use crate::notes::By;
+    let lang = editor.doc().syntax.as_ref().map(|s| s.lang.name.clone());
+    let sp = |text: &str, style: Style| Span { text: text.to_string(), style };
+    let accent = Style { fg: ui.accent.fg, ..Style::default() };
+    let dim = Style { fg: ui.virt.fg, ..Style::default() };
+    let faint = Style { fg: ui.linenr.fg, ..Style::default() };
+    let key = Style { bold: true, ..dim };
+    let mut out = Vec::new();
+    // The newest three; older ones fold into a count
+    const SHOWN: usize = 3;
+    let skip = n.thread.len().saturating_sub(SHOWN);
+    if skip > 0 {
+        out.push(Line::Text {
+            spans: vec![sp(&format!("… {skip} earlier — the chat has them"), faint)],
+            indent: 0,
+        });
+        out.push(Line::Blank);
+    }
+    for (i, e) in n.thread.iter().enumerate().skip(skip) {
+        if i > skip {
+            out.push(Line::Blank);
+        }
+        out.push(Line::Text {
+            spans: match e.by {
+                By::Claude => vec![sp("¶ ", accent), sp("claude", Style { bold: true, ..accent })],
+                By::You => vec![sp("› ", dim), sp("you", Style { bold: true, ..dim })],
+            },
+            indent: 0,
+        });
+        for l in e.text.lines().map(str::trim_end) {
+            out.push(if l.trim().is_empty() {
+                Line::Blank
+            } else {
+                let mut spans = vec![sp("  ", Style::default())];
+                spans.extend(message_spans(l, Style::default(), lang.as_deref(), editor));
+                Line::Text { spans, indent: 2 }
+            });
+        }
+    }
+    if n.waiting {
+        let started = editor.chat.as_ref().map_or_else(std::time::Instant::now, |c| c.started);
+        out.push(Line::Blank);
+        out.push(Line::Text {
+            spans: vec![sp(&wave(started), accent), sp(" claude is replying…", dim)],
+            indent: 0,
+        });
+    }
+    out.push(Line::Blank);
+    let hints: &[(&str, &str)] = if replying {
+        &[("enter", " send   "), ("esc", " cancel")]
+    } else {
+        &[("space n", " reply   "), ("]n", " next   "), ("space N", " all   "), (":note-close", "")]
+    };
+    out.push(Line::Text {
+        spans: hints.iter().flat_map(|(k, d)| [sp(k, key), sp(d, faint)]).collect(),
+        indent: 0,
+    });
+    out
+}
+
 fn draw_diagnostic_card(
     editor: &Editor,
     at: (u16, u16),

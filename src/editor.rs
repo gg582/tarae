@@ -60,6 +60,8 @@ pub enum PromptKind {
     Shell(crate::shell::Pipe),
     /// `C-r` in the global search results — the replacement text.
     Replace,
+    /// `space n`: a reply to note N, or (None) a question starting a note on this line.
+    Note(Option<u64>),
 }
 
 impl PromptKind {
@@ -79,6 +81,8 @@ impl PromptKind {
             PromptKind::Watch => "watch:",
             PromptKind::Shell(p) => p.label(),
             PromptKind::Replace => "replace with:",
+            PromptKind::Note(Some(_)) => "reply:",
+            PromptKind::Note(None) => "ask claude:",
         }
     }
 }
@@ -263,6 +267,8 @@ pub struct Editor {
     pub llm_pid: Option<u32>,
     /// Chat pane on the right (if open).
     pub chat: Option<crate::chat::Chat>,
+    /// Claude's notes pinned to code (`notes.rs`).
+    pub notes: crate::notes::Notes,
     /// Debug session · breakpoints (kept without a session) · session generation (drops late messages).
     pub dap: Option<crate::dap::Dap>,
     pub breakpoints: crate::dap::Breakpoints,
@@ -370,6 +376,7 @@ impl Editor {
             llm_generation: 0,
             llm_pid: None,
             chat: None,
+            notes: Default::default(),
             dap: None,
             breakpoints: Default::default(),
             agent: None,
@@ -819,6 +826,7 @@ impl Editor {
         self.blame_schedule();
         self.agent_next_diff();
         crate::follow::watch(self);
+        crate::notes::attach(self);
         self.agent_selection_tick(false);
         self.schedule_tick();
     }
@@ -1871,6 +1879,7 @@ impl Editor {
             PromptKind::Watch => self.add_watch(&text),
             PromptKind::Shell(p) => self.shell_pipe(p, &text),
             PromptKind::Replace => self.replace_plan_start(text),
+            PromptKind::Note(target) => crate::notes::submit(self, target, &text),
             PromptKind::Rename => {
                 if !text.is_empty() {
                     let extra = serde_json::json!({ "newName": text });
@@ -2245,7 +2254,7 @@ mod tests {
         let result = serde_json::json!({"type": "result", "result": "done"}).to_string();
         // Fake claude: logs received lines; per line two chunks + a result — one process takes several turns
         let script = format!(
-            "while read -r line; do printf '%s\\n' \"$line\" >> '{}'; printf '%s\\n' '{}' '{}' '{}'; done",
+            "while read -r line; do case \"$line\" in '{{\"message\"'*) ;; *) continue;; esac; printf '%s\\n' \"$line\" >> '{}'; printf '%s\\n' '{}' '{}' '{}'; done",
             log.display(),
             delta("Here:\n```\nBAR"),
             delta("\n```\n"),
@@ -2315,7 +2324,7 @@ mod tests {
             "delta": {"type": "text_delta", "text": format!("Defined at {}:1.", lib.display())}}});
         let result = serde_json::json!({"type": "result", "result": "done"});
         let script = format!(
-            "while read -r line; do printf '%s\\n' \"$line\" >> '{}'; printf '%s\\n' '{tool}' '{delta}' '{result}'; done",
+            "while read -r line; do case \"$line\" in '{{\"message\"'*) ;; *) continue;; esac; printf '%s\\n' \"$line\" >> '{}'; printf '%s\\n' '{tool}' '{delta}' '{result}'; done",
             log.display()
         );
         let mut ed = editor("");
@@ -2354,7 +2363,13 @@ mod tests {
             })
             .collect();
         ed.config.llm.command = "sh".into();
-        ed.config.llm.args = vec!["-c".into(), format!("while read -r line; do {}; done", body.join("; "))];
+        ed.config.llm.args = vec![
+            "-c".into(),
+            format!(
+                "while read -r line; do case \"$line\" in '{{\"message\"'*) ;; *) continue;; esac; {}; done",
+                body.join("; ")
+            ),
+        ];
     }
 
     fn follow_project(name: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
@@ -2437,6 +2452,197 @@ mod tests {
         assert!(ed.chat.as_ref().unwrap().follow.paused);
         assert_eq!(ed.doc().path.as_deref(), Some(util.as_path()), "stayed with the user");
         assert_eq!(cursor_line(&ed), 1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Notes end to end over the control protocol: Claude pins one with the `note` tool (tarae answers the
+    /// `mcp_message`), you reply in place with `space n`, Claude answers on the thread with `reply_to`.
+    #[test]
+    fn notes_pinned_by_claude_and_answered_in_place() {
+        use serde_json::json;
+        let (dir, main, _, lib) = follow_project("notes");
+        let log = dir.join("stdin.log");
+        let call = |id: u64, args: serde_json::Value| {
+            json!({"type": "control_request", "request_id": format!("c{id}"), "request": {"subtype": "mcp_message",
+                "server_name": "tarae", "message": {"jsonrpc": "2.0", "id": id, "method": "tools/call",
+                "params": {"name": "note", "arguments": args}}}})
+        };
+        let tool = |args: serde_json::Value| json!({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t", "name": "mcp__tarae__note", "input": args}]}});
+        let pin = json!({"path": lib, "line": 3, "text": "Line 3 repeats line 2."});
+        let answer = json!({"reply_to": 1, "text": "Because the fixture counts lines."});
+        let result = json!({"type": "result", "result": "done"});
+        let turn = |events: &[serde_json::Value]| {
+            events.iter().map(|e| format!("printf '%s\\n' '{e}'")).collect::<Vec<_>>().join("; ")
+        };
+        let script = format!(
+            "n=0; while read -r line; do printf '%s\\n' \"$line\" >> '{}'; case \"$line\" in '{{\"message\"'*) ;; *) continue;; esac; \
+             n=$((n+1)); if [ $n = 1 ]; then {}; else {}; fi; done",
+            log.display(),
+            turn(&[tool(pin.clone()), call(7, pin), result.clone()]),
+            turn(&[tool(answer.clone()), call(8, answer), result]),
+        );
+        let mut ed = editor("");
+        ed.open(&main).unwrap();
+        ed.config.llm.command = "sh".into();
+        ed.config.llm.args = vec!["-c".into(), script];
+        feed(&mut ed, "<space>lany notes?<ret>");
+        settle_until(&mut ed, |ed| !ed.chat.as_ref().unwrap().busy());
+        assert_eq!(ed.notes.list.len(), 1);
+        let n = &ed.notes.list[0];
+        assert_eq!(
+            (n.path.as_path(), n.lines.clone(), n.gist()),
+            (lib.as_path(), 2..3, "Line 3 repeats line 2.")
+        );
+        // Follow went to the note: its card is under the cursor
+        assert_eq!(ed.doc().path.as_deref(), Some(lib.as_path()));
+        assert_eq!(crate::notes::here(&ed).map(|n| n.id), Some(1));
+        // The fake logs our control_response when it reads it — wait for that
+        let logged = |needle: &str| {
+            let end = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                let sent = std::fs::read_to_string(&log).unwrap_or_default();
+                if sent.contains(needle) || std::time::Instant::now() > end {
+                    return sent;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        };
+        let sent = logged("note #1 pinned at");
+        assert!(
+            sent.lines().next().unwrap().contains("\"sdkMcpServers\":[\"tarae\"]"),
+            "registered first: {sent}"
+        );
+        assert!(sent.contains("\"request_id\":\"c7\"") && sent.contains("note #1 pinned at"), "{sent}");
+        // Reply in place — the keys stay in the editor
+        feed(&mut ed, "<esc><space>nwhy?<ret>");
+        assert!(ed.notes.list[0].waiting);
+        assert!(!ed.chat.as_ref().unwrap().focused, "replying doesn't move the keys to the chat");
+        settle_until(&mut ed, |ed| !ed.chat.as_ref().unwrap().busy());
+        let n = &ed.notes.list[0];
+        let thread: Vec<_> = n.thread.iter().map(|e| (e.by, e.text.as_str())).collect();
+        use crate::notes::By;
+        assert_eq!(
+            thread,
+            [
+                (By::Claude, "Line 3 repeats line 2."),
+                (By::You, "why?"),
+                (By::Claude, "Because the fixture counts lines.")
+            ]
+        );
+        assert!(!n.waiting);
+        let sent = logged("replied on note #1");
+        assert!(
+            sent.contains("<note id=\\\"1\\\"") && sent.contains("claude: Line 3 repeats line 2."),
+            "{sent}"
+        );
+        assert!(sent.contains("replied on note #1"), "{sent}");
+        let c = ed.chat.as_ref().unwrap();
+        assert!(c.msgs.iter().any(|m| m.role == crate::chat::Role::User && m.chip.starts_with("¶ #1")));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Asking about a line starts a note with you; Claude's plain answer (no tool) lands in the thread.
+    #[test]
+    fn a_question_on_a_line_becomes_a_note() {
+        use serde_json::json;
+        let (dir, main, ..) = follow_project("ask");
+        let mut ed = editor("");
+        ed.open(&main).unwrap();
+        fake_claude_stream(
+            &mut ed,
+            &[
+                json!({"type": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "It prints line 2."}}}),
+                json!({"type": "result", "result": "done"}),
+            ],
+        );
+        feed(&mut ed, "j<space>nwhat is this?<ret>");
+        let n = &ed.notes.list[0];
+        assert_eq!((n.lines.clone(), n.waiting), (1..2, true));
+        assert!(ed.chat.as_ref().is_some_and(|c| !c.focused), "the chat opens without taking the keys");
+        settle_until(&mut ed, |ed| !ed.chat.as_ref().unwrap().busy());
+        let n = &ed.notes.list[0];
+        assert_eq!(n.thread.len(), 2);
+        assert_eq!(n.thread[1].text, "It prints line 2.");
+        assert!(!n.waiting);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// An older claude that rejects `--thinking-display` is respawned without it — the chat still works.
+    #[test]
+    fn chat_survives_a_claude_without_thinking_display() {
+        let mut ed = editor("fn main() {}\n");
+        let result = serde_json::json!({"type": "result", "result": "fine"});
+        ed.config.llm.command = "sh".into();
+        ed.config.llm.args = vec![
+            "-c".into(),
+            format!(
+                "case \"$*\" in *thinking-display*) echo \"error: unknown option '--thinking-display'\" >&2; exit 1;; esac; \
+                 while read -r line; do case \"$line\" in '{{\"message\"'*) ;; *) continue;; esac; printf '%s\\n' '{result}'; done"
+            ),
+            "sh".into(),
+        ];
+        feed(&mut ed, "<space>l");
+        settle_until(&mut ed, |ed| {
+            ed.chat.as_ref().unwrap().proc_alive() && ed.chat.as_ref().unwrap().generation() == 2
+        });
+        feed(&mut ed, "hi<ret>");
+        settle_until(&mut ed, |ed| !ed.chat.as_ref().unwrap().busy());
+        let c = ed.chat.as_ref().unwrap();
+        assert!(
+            c.msgs.iter().any(|m| m.role == crate::chat::Role::Assistant && m.text == "fine"),
+            "{:?}",
+            c.msgs.iter().map(|m| &m.text).collect::<Vec<_>>()
+        );
+    }
+
+    /// If claude can't be reached, a reply or a new note is taken back instead of waiting forever.
+    #[test]
+    fn a_note_claude_never_saw_is_taken_back() {
+        let (dir, main, ..) = follow_project("unreachable");
+        let mut ed = editor("");
+        ed.open(&main).unwrap();
+        ed.config.llm.command = "/nonexistent/claude".into();
+        feed(&mut ed, "<space>nhello<ret>");
+        assert!(ed.notes.list.is_empty(), "the new note went away");
+        crate::notes::add(&mut ed, &main, 0..1, crate::notes::By::Claude, "hi");
+        feed(&mut ed, "<space>nreply<ret>");
+        let n = &ed.notes.list[0];
+        assert_eq!((n.thread.len(), n.waiting), (1, false), "the reply was taken back");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A note rides its mark: lines added above push it down, and the jump list's pruning keeps it.
+    #[test]
+    fn notes_follow_edits() {
+        let (dir, _, _, lib) = follow_project("edits");
+        let mut ed = editor("");
+        ed.open(&lib).unwrap();
+        let args = serde_json::json!({"path": lib, "line": 5, "end_line": 6, "text": "here"});
+        crate::notes::tool_call(&mut ed, &args).unwrap();
+        feed(&mut ed, "ggOa<ret>b<esc>");
+        ed.push_jump();
+        crate::notes::attach(&mut ed);
+        assert_eq!(ed.notes.list[0].lines, 6..8);
+        feed(&mut ed, "]n");
+        assert_eq!(ed.cursor_line(), 6);
+        // Across files, in (file, line) order, wrapping
+        let util = dir.join("util.rs");
+        crate::notes::tool_call(&mut ed, &serde_json::json!({"path": util, "line": 2, "text": "there"}))
+            .unwrap();
+        feed(&mut ed, "]n");
+        assert_eq!(ed.doc().path.as_deref(), Some(util.as_path()), "the next note is in another file");
+        feed(&mut ed, "]n");
+        assert_eq!((ed.doc().path.as_deref(), ed.cursor_line()), (Some(lib.as_path()), 6), "wraps around");
+        feed(&mut ed, "[n");
+        assert_eq!(ed.doc().path.as_deref(), Some(util.as_path()));
+        ed.open(&lib).unwrap();
+        ed.goto_line(6);
+        assert!(crate::notes::tool_call(&mut ed, &serde_json::json!({"path": lib, "text": "x"})).is_err());
+        assert!(crate::notes::tool_call(&mut ed, &serde_json::json!({"reply_to": 9, "text": "x"})).is_err());
+        feed(&mut ed, ":note-close<ret>");
+        assert_eq!(ed.notes.list.len(), 1, "only the one here");
+        feed(&mut ed, ":notes-clear<ret>");
+        assert!(ed.notes.list.is_empty());
         std::fs::remove_dir_all(&dir).ok();
     }
 
