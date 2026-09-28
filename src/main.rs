@@ -34,6 +34,7 @@ mod pairs;
 mod picker;
 mod recent;
 mod repeat;
+mod replace;
 mod runtime;
 mod search;
 mod selection;

@@ -69,6 +69,11 @@ pub fn execute(editor: &mut Editor, line: &str) -> Result<(), String> {
         "q" | "quit" if editor.close_view() => Ok(()),
         "q" | "quit" | "qa" | "quit-all" => quit(editor, false),
         "q!" | "quit!" | "qa!" | "quit-all!" => quit(editor, true),
+        "wa" | "write-all" => write_all(editor),
+        "wqa" | "xa" | "write-quit-all" => {
+            write_all(editor)?;
+            quit(editor, false)
+        }
         "wq" | "x" | "write-quit" if rest.is_empty() && editor.format_then_save(true) => Ok(()),
         "wq" | "x" | "write-quit" => {
             write(editor, rest, false)?;
@@ -256,6 +261,28 @@ fn write(editor: &mut Editor, path: &str, force: bool) -> Result<(), String> {
         None => return save_doc(editor, id, force),
     }
     saved(editor, id);
+    Ok(())
+}
+
+/// `:wa` — every modified buffer with a file (not ones still loading); errors are collected.
+fn write_all(editor: &mut Editor) -> Result<(), String> {
+    let ids: Vec<_> = editor
+        .docs
+        .iter()
+        .filter(|d| d.is_modified() && d.path.is_some() && !d.loading && d.virtual_uri.is_none())
+        .map(|d| d.id)
+        .collect();
+    let mut failed = Vec::new();
+    for &id in &ids {
+        if let Err(e) = save_doc(editor, id, false) {
+            failed.push(e);
+        }
+    }
+    if !failed.is_empty() {
+        return Err(failed.join(" · "));
+    }
+    let n = ids.len();
+    editor.set_success(if n == 0 { "nothing to save".to_string() } else { format!("Saved {n} file(s)") });
     Ok(())
 }
 

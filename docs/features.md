@@ -107,6 +107,9 @@ configs carry over as they are.
   `.gitignore` is respected), `space b` buffers, `space /` global search (ripgrep when `rg` is installed, a built-in
   regex search otherwise). Lists fill in on a worker thread. `C-n`/`C-p` or arrows, `Tab`, `Enter`, `Esc`. On terminals
   at least 100 columns wide, a syntax-highlighted preview sits on the right ([screenshot](screenshots/m2-file-picker.png)). `space '` reopens the last one as you left it
+- **Replace across files** — in the `space /` results, `C-r` asks for the replacement (`$1` for groups) and replaces
+  the matches still listed (type to narrow them first). A preview lists each file with its diff; Enter replaces in
+  every listed file (one undo step each, unsaved buffers included); `:wa` saves them
 - **Search** `/ ? n N *` — matches highlight as you type, the view follows the first match (`Esc` puts you back), and
   the status line shows `/pattern  8/13`. `Esc` in normal mode clears the highlight
   ([screenshot](screenshots/ux-search.png))

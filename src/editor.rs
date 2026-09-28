@@ -58,6 +58,8 @@ pub enum PromptKind {
     Watch,
     /// `|` `A-|` `!` `A-!` `$` — a shell command for the selections (shell.rs).
     Shell(crate::shell::Pipe),
+    /// `C-r` in the global search results — the replacement text.
+    Replace,
 }
 
 impl PromptKind {
@@ -76,6 +78,7 @@ impl PromptKind {
             PromptKind::LogMessage => "log:",
             PromptKind::Watch => "watch:",
             PromptKind::Shell(p) => p.label(),
+            PromptKind::Replace => "replace with:",
         }
     }
 }
@@ -196,6 +199,10 @@ pub struct Editor {
     pub(crate) repeating_insert: bool,
     /// `A-o` steps (doc, version, selection before, after) — `A-i` walks back while nothing else changed.
     pub(crate) expand_history: Vec<(DocId, u64, Selection, Selection)>,
+    /// Replace across files: (pattern, listed matches per file) waiting for the replacement · the plan
+    /// shown in the preview picker.
+    pub(crate) replace_targets: Option<(String, crate::replace::Targets)>,
+    pub(crate) replace_plan: Vec<crate::replace::FilePlan>,
     /// `gw` labels on screen (labels.rs) — the next two keys pick one.
     pub jump_labels: Option<crate::labels::Labels>,
     /// Length of the key sequence behind the last command — to drop `Q` itself when recording stops.
@@ -389,6 +396,8 @@ impl Editor {
             repeating_insert: false,
             expand_history: Vec::new(),
             jump_labels: None,
+            replace_targets: None,
+            replace_plan: Vec::new(),
             next_id: 0,
         };
         ed.new_scratch();
@@ -969,7 +978,7 @@ impl Editor {
     }
 
     /// A closing picker is kept for `space '` — not code actions (their list goes stale with the text).
-    fn keep_last_picker(&mut self) {
+    pub(crate) fn keep_last_picker(&mut self) {
         if let Some(p) = self.picker.take()
             && !p.items().iter().any(|i| matches!(i.action, Action::Code(_)))
         {
@@ -991,10 +1000,9 @@ impl Editor {
         }
         let root = std::env::current_dir().unwrap_or_default();
         let title = format!("grep /{pattern}/");
-        self.open_picker(
-            Picker::new(title, Vec::new(), false),
-            Some(Box::new(move || crate::picker::grep(&root, &pattern))),
-        );
+        let mut picker = Picker::new(title, Vec::new(), false);
+        picker.grep = Some(pattern.clone());
+        self.open_picker(picker, Some(Box::new(move || crate::picker::grep(&root, &pattern))));
     }
 
     fn picker_key(&mut self, key: Key) {
@@ -1006,6 +1014,20 @@ impl Editor {
                     self.theme = t;
                 }
                 return;
+            }
+            // Global search results: replace what's listed
+            (Code::Char('r'), true) if p.grep.is_some() => return self.replace_ask(),
+            // Replace preview: Enter applies to every file still listed
+            (Code::Enter, _) if p.current().is_some_and(|i| matches!(i.action, Action::ReplaceFile(_))) => {
+                let files: Vec<usize> = p
+                    .shown()
+                    .filter_map(|i| match i.action {
+                        Action::ReplaceFile(n) => Some(n),
+                        _ => None,
+                    })
+                    .collect();
+                self.picker = None;
+                return self.replace_apply(&files);
             }
             (Code::Enter, _) => {
                 let action = p.current().map(|i| i.action.clone());
@@ -1068,6 +1090,10 @@ impl Editor {
         let result = match action {
             Action::Code(i) => {
                 self.run_code_action(i);
+                Ok(())
+            }
+            Action::ReplaceFile(n) => {
+                self.replace_apply(&[n]);
                 Ok(())
             }
             Action::Jump { index, .. } => {
@@ -1752,6 +1778,7 @@ impl Editor {
             PromptKind::LogMessage => self.set_breakpoint_field(true, &text),
             PromptKind::Watch => self.add_watch(&text),
             PromptKind::Shell(p) => self.shell_pipe(p, &text),
+            PromptKind::Replace => self.replace_plan_start(text),
             PromptKind::Rename => {
                 if !text.is_empty() {
                     let extra = serde_json::json!({ "newName": text });
@@ -2024,6 +2051,43 @@ mod tests {
         settle_until(&mut ed, done);
         assert_eq!(text(&ed), "xyabc def\n", "failure: nothing changes");
         assert!(ed.status.as_ref().is_some_and(|(m, _)| m.contains("exit 1")), "{:?}", ed.status);
+    }
+
+    /// Global search results → `C-r` → replacement → per-file preview → Enter replaces in the files still
+    /// listed (one undo step each, open buffers included) → `:wa` saves them.
+    #[test]
+    fn replace_across_files() {
+        let dir = std::env::temp_dir().join(format!("tarae-repl-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let dir = std::fs::canonicalize(&dir).unwrap(); // buffers hold real paths (macOS /private/var)
+        let (a, b) = (dir.join("a.txt"), dir.join("b.txt"));
+        std::fs::write(&a, "foo one\nbar\nfoo two\n").unwrap();
+        std::fs::write(&b, "foo three\n").unwrap();
+        let mut ed = editor("");
+        let hit = |p: &std::path::Path, line: usize| crate::picker::Item {
+            label: format!("{}:{}", p.display(), line + 1),
+            action: Action::Goto { path: p.to_path_buf(), line, col: 0 },
+            hint: String::new(),
+            glyph: None,
+        };
+        let mut picker = Picker::new("grep /foo/", vec![hit(&a, 0), hit(&a, 2), hit(&b, 0)], false);
+        picker.grep = Some("foo".into());
+        ed.open_picker(picker, None);
+        feed(&mut ed, "<C-r>baz<ret>");
+        settle_until(&mut ed, |ed| ed.picker.is_some());
+        let p = ed.picker.as_ref().unwrap();
+        assert_eq!(p.items().len(), 2, "one row per file");
+        assert!(p.title.starts_with("replace 3"), "{}", p.title);
+        feed(&mut ed, "<ret>");
+        let text_of = |ed: &Editor, p: &std::path::Path| {
+            ed.docs.iter().find(|d| d.path.as_deref() == Some(p)).map(|d| d.text.to_string())
+        };
+        assert_eq!(text_of(&ed, &a).as_deref(), Some("baz one\nbar\nbaz two\n"));
+        assert_eq!(text_of(&ed, &b).as_deref(), Some("baz three\n"));
+        assert_eq!(std::fs::read_to_string(&a).unwrap(), "foo one\nbar\nfoo two\n", "not saved yet");
+        feed(&mut ed, ":wa<ret>");
+        assert_eq!(std::fs::read_to_string(&b).unwrap(), "baz three\n");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

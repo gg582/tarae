@@ -1047,7 +1047,12 @@ impl Editor {
     // ── Applying edits (shared by code actions, rename, format) ─────────────
 
     /// TextEdit[] → one transaction (one undo per doc). Ranges use this server's position encoding.
-    fn apply_text_edits(&mut self, doc_id: DocId, enc: Encoding, edits: &[Value]) -> Result<(), String> {
+    pub(crate) fn apply_text_edits(
+        &mut self,
+        doc_id: DocId,
+        enc: Encoding,
+        edits: &[Value],
+    ) -> Result<(), String> {
         let doc = self.docs.iter_mut().find(|d| d.id == doc_id).ok_or("buffer closed")?;
         if doc.loading {
             return Err("still loading".into());
@@ -1175,7 +1180,7 @@ impl Editor {
     }
 
     /// Open doc for this path (paths of docs are canonical).
-    fn open_doc_at(&self, path: &std::path::Path) -> Option<&crate::document::Document> {
+    pub(crate) fn open_doc_at(&self, path: &std::path::Path) -> Option<&crate::document::Document> {
         let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
         self.docs.iter().find(|d| d.path.as_deref() == Some(path.as_path()))
     }

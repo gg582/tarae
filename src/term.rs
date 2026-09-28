@@ -2648,6 +2648,14 @@ fn draw_picker(
             },
             _ => String::new(),
         },
+        Some(Action::ReplaceFile(n)) => match editor.replace_plan.get(*n) {
+            Some(f) => format!(
+                "{}  {}",
+                rel_path(&f.path),
+                crate::editdiff::summary(&f.diff).split("  ").nth(1).unwrap_or("")
+            ),
+            None => String::new(),
+        },
         Some(Action::Command(_) | Action::Typed(_) | Action::Theme(_)) | None => String::new(),
     };
     let rows = b.list_rows + 4;
@@ -2819,6 +2827,12 @@ fn preview_lines<'a>(p: &'a Picker, editor: &'a Editor, rows: usize) -> Option<P
             let d = editor.docs.iter().find(|d| d.id == *id)?;
             let cur = mv::line_of(&d.text, d.selection().primary().head);
             (&d.text, d.syntax.as_ref(), Some(cur))
+        }
+        Action::ReplaceFile(n) => {
+            let f = editor.replace_plan.get(*n)?;
+            let rows = (0..f.diff[0].lines.len()).map(|li| (0, Some(li))).collect();
+            let styles = crate::syntax::capture_styles(|n| editor.theme.try_get(n));
+            return Some(PreviewView::Diff { files: f.diff.clone(), rows, styles });
         }
         Action::Jump { doc, line, .. } => {
             let d = editor.docs.iter().find(|d| d.id == *doc)?;
@@ -4821,8 +4835,13 @@ fn cursor_diagnostic(editor: &Editor) -> Option<&crate::lsp::Diagnostic> {
 
 /// Keys for whatever is floating now (shown dimmed when the command line is empty).
 fn key_hints(editor: &Editor) -> Option<&'static [(&'static str, &'static str)]> {
+    let replace_list = |p: &Picker| p.current().is_some_and(|i| matches!(i.action, Action::ReplaceFile(_)));
     if editor.completion.is_some() {
         Some(&[("tab", "select"), ("enter", "accept"), ("C-x", "complete"), ("esc", "close")])
+    } else if editor.picker.as_ref().is_some_and(|p| p.grep.is_some()) {
+        Some(&[("enter", "open"), ("C-r", "replace the listed matches"), ("esc", "close")])
+    } else if editor.picker.as_ref().is_some_and(replace_list) {
+        Some(&[("enter", "replace in every listed file"), ("type", "narrow"), ("esc", "cancel")])
     } else if editor.popup.is_some() {
         Some(&[("C-d", "scroll down"), ("C-u", "scroll up"), ("esc", "close")])
     } else {

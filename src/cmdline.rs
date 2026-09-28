@@ -43,6 +43,8 @@ pub const COMMANDS: &[TypedCmd] = &[
     c(&["write", "w"], Arg::File, "Save (or save as a new path)"),
     c(&["write!", "w!"], Arg::File, "Save, overwriting changes made on disk"),
     c(&["write-quit", "wq", "x"], Arg::File, "Save and quit"),
+    c(&["write-all", "wa"], Arg::None, "Save every modified file"),
+    c(&["write-quit-all", "wqa", "xa"], Arg::None, "Save every modified file and quit"),
     c(&["quit", "q"], Arg::None, "Close this window, or quit"),
     c(&["quit!", "q!"], Arg::None, "Quit without saving"),
     c(&["quit-all", "qa"], Arg::None, "Quit tarae"),

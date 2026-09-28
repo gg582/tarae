@@ -33,6 +33,8 @@ pub enum Action {
         doc: DocId,
         line: usize,
     },
+    /// File `n` of the pending replace-across-files plan (replace.rs).
+    ReplaceFile(usize),
     /// Line `line` (from 0) of the file, byte `col` within that line.
     Goto {
         path: PathBuf,
@@ -77,6 +79,8 @@ pub struct Picker {
     pub view: Vec<Row>,
     /// Whether to use the right-hand preview pane (off when there's no file to show, e.g. code actions).
     pub preview: bool,
+    /// Global search results: the pattern (`C-r` replaces the listed matches).
+    pub grep: Option<String>,
     /// Preview cache (path → loading/content). Filled by a worker thread.
     pub previews: HashMap<PathBuf, Preview>,
     matcher: Matcher,
@@ -98,6 +102,7 @@ impl Picker {
             loading: false,
             view: Vec::new(),
             preview: true,
+            grep: None,
             previews: HashMap::new(),
             matcher: Matcher::new(config),
         };
@@ -150,6 +155,11 @@ impl Picker {
             return;
         }
         self.selected = (self.selected as isize + delta).rem_euclid(n as isize) as usize;
+    }
+
+    /// Items the query leaves listed, best first.
+    pub fn shown(&self) -> impl Iterator<Item = &Item> {
+        self.matches.iter().map(|&i| &self.items[i as usize])
     }
 
     pub fn items(&self) -> &[Item] {
@@ -207,6 +217,7 @@ impl Action {
             Action::Goto { path, line, .. } => Some((path, Some(*line))),
             Action::Buffer(_)
             | Action::Jump { .. }
+            | Action::ReplaceFile(_)
             | Action::Code(_)
             | Action::Command(_)
             | Action::Typed(_)

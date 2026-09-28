@@ -320,6 +320,8 @@ Type `:` in normal mode. `Tab` completes command names and their arguments (path
 | `:write` | `:w` | Save (or save as a new path) |
 | `:write!` | `:w!` | Save, overwriting changes made on disk |
 | `:write-quit` | `:wq` `:x` | Save and quit |
+| `:write-all` | `:wa` | Save every modified file |
+| `:write-quit-all` | `:wqa` `:xa` | Save every modified file and quit |
 | `:quit` | `:q` | Close this window, or quit |
 | `:quit!` | `:q!` | Quit without saving |
 | `:quit-all` | `:qa` | Quit tarae |
