@@ -52,7 +52,7 @@ pub struct EditorConfig {
     pub restore_session: bool,
     /// Diagnostics at the end of their line (like Error Lens) + faint background on error/warning lines.
     pub inline_diagnostics: bool,
-    /// Cursor on a line whose diagnostics don't all fit at its end → all of them in a card by the cursor.
+    /// Cursor on an underline whose message doesn't fit at the line end → the message in full in a card.
     pub cursor_diagnostics: bool,
     /// Auto-save: "off" | "focus" (when the terminal loses focus) | "idle" (+ after 2 s without input).
     pub auto_save: String,

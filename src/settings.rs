@@ -186,7 +186,7 @@ pub static SETTINGS: &[Setting] = &[
     Setting {
         path: "editor.cursor-diagnostics",
         kind: Kind::Bool,
-        doc: "On a line whose diagnostics don't fit at its end, show them in full in a card by the cursor (Esc hides it)",
+        doc: "Cursor on an underlined problem whose message doesn't fit at the line end: show it in full in a card (Esc hides it)",
         get: |c| Value::from(c.cursor_diagnostics),
         set: |c, v| c.cursor_diagnostics = b(v),
     },

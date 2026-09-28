@@ -1660,10 +1660,7 @@ fn draw_text(
             let hit = cursors.iter().position(|p| span.contains(p));
             let selected = ranges.iter().position(|r| r.from() <= c.pos && c.pos < r.to());
             // Underline diagnostic ranges (the most severe)
-            if let Some(d) = visible_diags
-                .iter()
-                .filter(|d| d.from <= c.pos && (c.pos < d.to || (d.from == d.to && c.pos == d.from)))
-                .min_by_key(|d| d.severity)
+            if let Some(d) = visible_diags.iter().filter(|d| underlines(d, c.pos)).min_by_key(|d| d.severity)
             {
                 st = st.patch(ui.diag[d.severity as usize]);
             }
@@ -4516,8 +4513,14 @@ fn draw_doc_box(
     }
 }
 
-/// The cursor line's diagnostics in full — the line end shows only a first line, cut to fit. A card below
-/// the cursor, only when something there didn't fit and nothing else floats (normal/select mode).
+/// Whether diagnostic `d` underlines the cell at `pos` (an empty range marks the one cell at its start).
+fn underlines(d: &crate::lsp::Diagnostic, pos: usize) -> bool {
+    d.from <= pos && (pos < d.to || (d.from == d.to && pos == d.from))
+}
+
+/// The diagnostics under the cursor in full — the line end shows only a first line, cut to fit. A card by
+/// the cursor, only when it sits on an underline whose message the line end didn't show whole, and
+/// nothing else floats (normal/select mode).
 fn draw_diagnostic_card(
     editor: &Editor,
     at: (u16, u16),
@@ -4535,29 +4538,29 @@ fn draw_diagnostic_card(
         || editor.chat.as_ref().is_some_and(|c| c.focused);
     if !editor.config.cursor_diagnostics
         || busy
-        || ui.cursor_diags_shown.get()
         || editor.diag_card_hidden == Some((editor.doc().id, editor.cursor_line()))
     {
         return Ok(());
     }
-    let lines = diagnostic_lines(&cursor_line_diagnostics(editor), editor, ui);
+    let here = cursor_diagnostics(editor);
+    // The line end shows the line's only diagnostic whole — and that's the one under the cursor
+    let line = editor.cursor_line();
+    let text = &editor.doc().text;
+    if ui.cursor_diags_shown.get() && here.iter().all(|d| mv::line_of(text, d.from) == line) {
+        return Ok(());
+    }
+    let lines = diagnostic_lines(&here, editor, ui);
     if lines.is_empty() {
         return Ok(());
     }
     draw_float(&lines, at, 0, 12, ui, editor, lay, out)
 }
 
-/// Diagnostics starting on the cursor line or covering the cursor — most severe first.
-fn cursor_line_diagnostics(editor: &Editor) -> Vec<&crate::lsp::Diagnostic> {
+/// Diagnostics underlining the cell under the cursor — most severe first.
+fn cursor_diagnostics(editor: &Editor) -> Vec<&crate::lsp::Diagnostic> {
     let doc = editor.doc();
     let head = doc.selection().primary().cursor(&doc.text);
-    let line = mv::line_of(&doc.text, head);
-    let mut list: Vec<_> = doc
-        .lsp
-        .diagnostics
-        .iter()
-        .filter(|d| mv::line_of(&doc.text, d.from) == line || (d.from <= head && head <= d.to))
-        .collect();
+    let mut list: Vec<_> = doc.lsp.diagnostics.iter().filter(|d| underlines(d, head)).collect();
     list.sort_by_key(|d| (d.severity, d.from));
     list
 }

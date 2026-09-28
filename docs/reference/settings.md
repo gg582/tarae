@@ -28,7 +28,7 @@ The name is also the `:set` path: `:set editor.scrolloff 8` changes it for this 
 | `editor.render-doc-comments` | bool | `true` | Show doc comments (///, //!, /** */) rendered as Markdown; raw when the cursor enters the block |
 | `editor.restore-session` | bool | `true` | Reopen the files you had open in this folder (with cursor positions) when started without files |
 | `editor.inline-diagnostics` | bool | `true` | Show diagnostic messages at the end of their line and tint error/warning lines |
-| `editor.cursor-diagnostics` | bool | `true` | On a line whose diagnostics don't fit at its end, show them in full in a card by the cursor (Esc hides it) |
+| `editor.cursor-diagnostics` | bool | `true` | Cursor on an underlined problem whose message doesn't fit at the line end: show it in full in a card (Esc hides it) |
 | `editor.indent-guides` | bool | `true` | Faint vertical guides in leading indentation (theme: ui.virtual.indent-guide) |
 | `editor.scrollbar` | bool | `true` | Scrollbar on the right edge, with error/warning marks for the whole file |
 | `editor.lsp` | bool | `true` | Start language servers (servers: [lsp.&lt;name>] command/args, per language: [lang.&lt;lang>] lsp = [...]) |

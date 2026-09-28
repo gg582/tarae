@@ -429,8 +429,8 @@ fn snapshot_statusline_widths() {
     }
 }
 
-/// Diagnostics on the cursor line: an error whose detail is on its second line (+ a hint) → the card below
-/// the cursor with all of it, `code` in syntax colors.
+/// Cursor on an underlined error whose detail is on its second line (+ a hint overlapping it) → the card by
+/// the cursor with both in full, `code` in syntax colors.
 fn diagnostic_card_shot() -> Shot {
     let mut s = Shot::new(90, 24);
     s.file("src/demo.rs", DEMO_RS);
@@ -451,7 +451,7 @@ fn diagnostic_card_shot() -> Shot {
         ),
         diag(at - 9, 4, "expected due to this", json!({ "source": "rustc", "code": "E0308" })),
     ];
-    s.keys("16G");
+    s.keys("16Gfw");
     s
 }
 
@@ -460,8 +460,8 @@ fn snapshot_diagnostic_card() {
     diagnostic_card_shot().check("diagnostic_card");
 }
 
-/// The card only when the line end can't show it all · not in insert mode · Esc hides it until the
-/// cursor leaves the line.
+/// The card only on an underline · only when the line end can't show it all · not in insert mode · Esc
+/// hides it until the cursor leaves the line.
 #[test]
 fn diagnostic_card_shows_only_what_the_line_end_cannot() {
     let mut s = diagnostic_card_shot();
@@ -478,7 +478,10 @@ fn diagnostic_card_shows_only_what_the_line_end_cannot() {
     assert!(shown(&mut s), "back after leaving the line");
     s.keys("i");
     assert!(!shown(&mut s), "not while typing");
-    s.keys("<esc>");
+    s.keys("<esc>gh");
+    assert!(!shown(&mut s), "same line, off the underline");
+    s.keys("fw");
+    assert!(shown(&mut s), "back on the underline");
     // One short single-line message fits at the line end — no card
     let at = DEMO_RS.find("word_counts(text);").unwrap();
     s.ed.doc_mut().lsp.diagnostics = vec![crate::lsp::Diagnostic {
