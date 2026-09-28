@@ -157,6 +157,8 @@ impl Editor {
                 continue;
             }
             let name = doc.display_name_short();
+            // The log follows along like `tail -f`: reloaded without a toast, the cursor kept at the end
+            let log = crate::log::is_log(doc.path.as_deref());
             match (now, body) {
                 // Deleted (or unreadable) — notify only once
                 (None, _) => {
@@ -167,10 +169,20 @@ impl Editor {
                 }
                 (Some(stamp), Some(body)) if !doc.is_modified() => {
                     let before = doc.text.len_lines();
+                    let head = doc.selection().primary().cursor(&doc.text);
+                    let at_end = crate::movement::line_of(&doc.text, head) + 1
+                        >= crate::movement::last_line(&doc.text);
                     let changed = reload_text(doc, &body);
                     doc.disk = Some(stamp);
                     doc.disk_conflict = false;
-                    if changed {
+                    if log {
+                        if changed && at_end {
+                            let last = crate::movement::last_line(&doc.text);
+                            let line = last.saturating_sub(usize::from(doc.text.line(last).len_chars() == 0));
+                            let pos = crate::movement::line_start(&doc.text, line);
+                            doc.set_selection(crate::selection::Selection::point(pos));
+                        }
+                    } else if changed {
                         let delta = doc.text.len_lines() as isize - before as isize;
                         let lines = match delta {
                             0 => String::new(),
@@ -321,6 +333,29 @@ mod tests {
         ed.disk_poll(Duration::ZERO);
         let ev = ed.events.recv_timeout(Duration::from_secs(5)).expect("disk stat");
         ed.handle_event(ev);
+    }
+
+    /// The open log follows new lines quietly — a toast would be logged, change the file, and loop.
+    #[test]
+    fn open_log_follows_without_toasts() {
+        let Some(log) = crate::log::path() else { return };
+        let dir = std::env::temp_dir().join(format!("tarae-logfollow-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("t.log");
+        std::fs::write(&file, "a\nb\n").unwrap();
+        let mut ed = Editor::new(Config::default());
+        ed.open(&file).unwrap();
+        let id = ed.doc().id;
+        feed(&mut ed, "ge");
+        ed.doc_mut().path = Some(log); // stands in for the log (tests never write the real one)
+        std::fs::write(&file, "a\nb\nc\nd\n").unwrap();
+        let known = ed.doc().disk;
+        ed.on_disk(vec![(id, known, stamp(&file), Some("a\nb\nc\nd\n".into()))]);
+        assert_eq!(ed.doc().text.to_string(), "a\nb\nc\nd\n");
+        assert!(ed.status.is_none() && ed.toasts.is_empty(), "no toast");
+        let head = ed.doc().selection().primary().head;
+        assert_eq!(ed.doc().text.byte_to_line(head), 3, "followed to the new last line");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

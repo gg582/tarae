@@ -13,6 +13,12 @@ pub fn path() -> Option<PathBuf> {
     crate::config::state_dir().map(|d| d.join("tarae.log"))
 }
 
+/// Whether `p` is the log — open, it's followed quietly (a toast about it would be logged, change the file
+/// again, and loop).
+pub fn is_log(p: Option<&std::path::Path>) -> bool {
+    p.is_some_and(|p| path().is_some_and(|l| l == p || std::fs::canonicalize(&l).is_ok_and(|l| l == p)))
+}
+
 fn sender() -> Option<&'static Sender<String>> {
     static TX: OnceLock<Option<Sender<String>>> = OnceLock::new();
     TX.get_or_init(|| {
