@@ -3037,7 +3037,9 @@ fn fit_segments(left: &mut Vec<Seg>, right: &mut Vec<Seg>, width: usize) {
             v.remove(i);
         }
     };
-    while total(left, right) > width {
+    // Left and right never touch (`main● 1`) — keep at least a two-cell gap while both sides have content
+    let gap = |l: &Vec<Seg>, r: &Vec<Seg>| if l.is_empty() || r.is_empty() { 0 } else { 2 };
+    while total(left, right) + gap(left, right) > width {
         let lmin = left.iter().enumerate().min_by_key(|(_, s)| s.keep).map(|(i, s)| (s.keep, i));
         let rmin = right.iter().enumerate().min_by_key(|(_, s)| s.keep).map(|(i, s)| (s.keep, i));
         match (lmin, rmin) {
@@ -4886,11 +4888,15 @@ mod tests {
     #[test]
     fn statusline_drops_least_important_first() {
         let seg = |t: &str, keep| Seg { text: t.into(), style: Style::default(), keep };
-        let mut l = vec![seg(" NOR ", 255), seg("  tarae · main", 80), seg("  a.rs", 200)];
-        let mut r = vec![seg("rust  ", 60), seg("utf-8 LF  ", 40), seg("1:1 ", 250)];
-        fit_segments(&mut l, &mut r, 30);
-        let texts: Vec<&str> = l.iter().chain(&r).map(|s| s.text.as_str()).collect();
-        assert_eq!(texts, vec![" NOR ", "  tarae · main", "  a.rs", "1:1 "], "drops encoding, then language");
+        let fit = |width| {
+            let mut l = vec![seg(" NOR ", 255), seg("  tarae · main", 80), seg("  a.rs", 200)];
+            let mut r = vec![seg("rust  ", 60), seg("utf-8 LF  ", 40), seg("1:1 ", 250)];
+            fit_segments(&mut l, &mut r, width);
+            l.iter().chain(&r).map(|s| s.text.clone()).collect::<Vec<_>>()
+        };
+        assert_eq!(fit(31), [" NOR ", "  tarae · main", "  a.rs", "1:1 "], "drops encoding, then language");
+        // One cell less and `a.rs` would touch `1:1` — the branch goes instead
+        assert_eq!(fit(30), [" NOR ", "  a.rs", "1:1 "]);
     }
 
     /// Same budget with syntax highlighting on — a big Rust file (only on machines with the grammar).

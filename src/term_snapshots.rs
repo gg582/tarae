@@ -402,10 +402,15 @@ fn snapshot_editing_narrow() {
     s.check("editing_narrow");
 }
 
-/// Status line with every segment, at three widths — least important segments drop first.
+/// Status line with every segment, at four widths — least important segments drop first.
 #[test]
 fn snapshot_statusline_widths() {
-    for (name, w) in [("statusline_wide", 120), ("statusline_medium", 56), ("statusline_narrow", 30)] {
+    for (name, w) in [
+        ("statusline_wide", 120),
+        ("statusline_medium", 56),
+        ("statusline_tight", 50),
+        ("statusline_narrow", 30),
+    ] {
         let mut s = Shot::new(w, 6);
         s.file("src/demo.rs", DEMO_RS);
         s.ed.git_branch = Some("main".into());
