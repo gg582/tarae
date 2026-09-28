@@ -49,6 +49,9 @@ configs carry over as they are.
   start/end, `C-r x` types register x, `C-s` makes what you've typed an undo step, `C-h` `C-d` `C-j`, `Home`/`End`
 - Auto-pairs `editor.auto-pairs` — `( [ { " ' `` ` `` get their closer (not before a word, and a quote not after one, so
   `don't` stays one quote; Rust lifetimes don't pair); typing the closer steps over it; backspace in `()` removes both
+- Syntax moves (tree-sitter) — `A-o` grows the selection to the enclosing node, `A-i` shrinks it back, `A-n`/`A-p`
+  select the next/previous sibling (also `A-↑ ↓ → ←`) · `]f` `[f` next/previous function, `]t` type, `]a` argument,
+  `]c` comment, `]T` test (each a jump) · `]p` `[p` paragraphs · `]space` `[space` add a blank line below/above
 - `m` mode — `mm` matching bracket; `mi`/`ma` + `w W p ( [ { < " ' `` ` `` or the tree-sitter objects `f t a c T`
   (function, type, argument, comment, test — repeat to widen one layer at a time); `ms` `mr` `md` surround
 - Registers `"x`, `_` (black hole), and `+` = the system clipboard (`space y`, `space p`, `space P`) · macros: `Q`

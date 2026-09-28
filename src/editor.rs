@@ -190,6 +190,8 @@ pub struct Editor {
     pub(crate) insert_rec: Option<crate::repeat::LastInsert>,
     pub(crate) last_insert: Option<crate::repeat::LastInsert>,
     pub(crate) repeating_insert: bool,
+    /// `A-o` steps (doc, version, selection before, after) — `A-i` walks back while nothing else changed.
+    pub(crate) expand_history: Vec<(DocId, u64, Selection, Selection)>,
     /// Length of the key sequence behind the last command — to drop `Q` itself when recording stops.
     pub last_trigger_len: usize,
     /// Some while entering a command line.
@@ -376,6 +378,7 @@ impl Editor {
             insert_rec: None,
             last_insert: None,
             repeating_insert: false,
+            expand_history: Vec::new(),
             next_id: 0,
         };
         ed.new_scratch();
@@ -2444,6 +2447,17 @@ q = \"delete_selection\"\n",
             "i<C-u><esc>",
             "a<C-k><esc>",
             "i(<backspace><esc>",
+            "]f",
+            "[f",
+            "]c",
+            "<A-o>",
+            "<A-i>",
+            "<A-n>",
+            "<A-p>",
+            "]p",
+            "[p",
+            "] ",
+            "[ ",
             "fa",
             "t한",
             "F,",
@@ -2713,6 +2727,71 @@ q = \"delete_selection\"\n",
         assert_eq!(text(&ed), "fn a() {\n    x();\n}\n", "one undo step");
         let ed = run("x\n", "<C-c>");
         assert_eq!(text(&ed), "x\n", "unknown language: nothing");
+    }
+
+    /// A Rust document with its tree parsed now — None when the grammar isn't built in.
+    fn parsed_rust(text: &str) -> Option<Editor> {
+        let lang = syntax::Loader::global().load(syntax::spec("rust")?).ok()?;
+        let mut ed = rust_editor(text);
+        let mut syn = syntax::Syntax::new(lang);
+        let job = syn.start_parse(&ed.docs[0].text);
+        let generation = job.generation;
+        let tree = job.run();
+        syn.finish_parse(generation, tree);
+        ed.docs[0].syntax = Some(syn);
+        Some(ed)
+    }
+
+    fn selected(ed: &Editor) -> String {
+        let (doc, r) = (ed.doc(), ed.doc().selection().primary());
+        doc.text.byte_slice(r.from()..r.to()).to_string()
+    }
+
+    const STRUCT_SRC: &str = "fn a(x: u8, y: u8) {\n    call(x);\n}\n\n// note\nfn b() {}\n";
+
+    /// `]f` `[f` `]c` select the next/previous textobject; `C-o` comes back.
+    #[test]
+    fn bracket_keys_select_textobjects() {
+        let Some(mut ed) = parsed_rust(STRUCT_SRC) else { return };
+        feed(&mut ed, "]f");
+        assert_eq!(selected(&ed), "fn b() {}");
+        feed(&mut ed, "[f");
+        assert_eq!(selected(&ed), "fn a(x: u8, y: u8) {\n    call(x);\n}");
+        feed(&mut ed, "]c");
+        assert_eq!(selected(&ed), "// note");
+        feed(&mut ed, "<C-o>");
+        assert_eq!(selected(&ed), "fn a(x: u8, y: u8) {\n    call(x);\n}", "a jump");
+    }
+
+    /// `A-o` grows by syntax node, `A-i` retraces it; `A-n`/`A-p` step through siblings.
+    #[test]
+    fn alt_o_grows_and_alt_i_retraces() {
+        let Some(mut ed) = parsed_rust(STRUCT_SRC) else { return };
+        let x = STRUCT_SRC.find("x)").unwrap();
+        ed.docs[0].set_selection(Selection::point(x));
+        feed(&mut ed, "<A-o><A-o>");
+        assert_eq!(selected(&ed), "call(x)");
+        feed(&mut ed, "<A-i><A-i>");
+        assert_eq!(ed.doc().selection().primary(), Range::point(x), "back where it started");
+        ed.docs[0].set_selection(Selection::point(STRUCT_SRC.find("x:").unwrap()));
+        feed(&mut ed, "<A-o><A-n>");
+        assert_eq!(selected(&ed), "y: u8");
+        feed(&mut ed, "<A-p>");
+        assert_eq!(selected(&ed), "x: u8");
+        let mut plain = editor("x\n");
+        feed(&mut plain, "<A-o>");
+        assert!(plain.status.as_ref().is_some_and(|(m, _)| m.contains("tree-sitter")));
+    }
+
+    #[test]
+    fn paragraphs_and_blank_lines() {
+        let line = |ed: &Editor| ed.doc().text.byte_to_line(ed.doc().selection().primary().head);
+        assert_eq!(line(&run("a\nb\n\nc\n", "]p")), 3);
+        assert_eq!(line(&run("a\nb\n\nc\n", "]p[p")), 0);
+        let ed = run("a\nb\n", "] ");
+        assert_eq!((text(&ed), line(&ed)), ("a\n\nb\n".into(), 0), "cursor stays");
+        let ed = run("a\nb\n", "j2[ ");
+        assert_eq!((text(&ed), line(&ed)), ("a\n\n\nb\n".into(), 3), "moves down with its line");
     }
 
     /// `C-o` returns from big moves (`ge`, `gg`, search) and `C-i`/Tab goes forward again; a spot

@@ -73,8 +73,16 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `A-C` | `copy_selection_on_prev_line` | Copy selection on previous line |
 | `A-c` | `change_selection_noyank` | Change selection without yanking |
 | `A-d` | `delete_selection_noyank` | Delete selection without yanking |
+| `A-down` | `shrink_selection` | Shrink selection back |
+| `A-i` | `shrink_selection` | Shrink selection back |
 | `A-K` | `remove_selections` | Remove selections matching the regex |
+| `A-left` | `select_prev_sibling` | Select previous syntax sibling |
+| `A-n` | `select_next_sibling` | Select next syntax sibling |
+| `A-o` | `expand_selection` | Grow selection to the enclosing syntax node |
+| `A-p` | `select_prev_sibling` | Select previous syntax sibling |
+| `A-right` | `select_next_sibling` | Select next syntax sibling |
 | `A-s` | `split_selection_on_newline` | Split selection on newlines |
+| `A-up` | `expand_selection` | Grow selection to the enclosing syntax node |
 | `A-x` | `extend_to_line_bounds` | Extend selection to line bounds |
 | `C-b` | `page_up` | Move page up |
 | `C-c` | `toggle_comments` | Comment or uncomment lines |
@@ -106,17 +114,31 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 
 | Key | Command | Description |
 |---|---|---|
-| `[ d` | `goto_prev_diag` | Goto previous diagnostic |
+| `[ a` | `goto_prev_parameter` | Previous argument |
+| `[ c` | `goto_prev_comment` | Previous comment |
+| `[ d` | `goto_prev_diag` | Previous diagnostic |
+| `[ f` | `goto_prev_function` | Previous function |
 | `[ g` | `goto_prev_change` | Previous git change |
+| `[ p` | `goto_prev_paragraph` | Previous paragraph |
+| `[ t` | `goto_prev_class` | Previous type |
+| `[ T` | `goto_prev_test` | Previous test |
 | `[ x` | `goto_prev_test_failure` | Previous failed test |
+| `[ space` | `add_newline_above` | Add a blank line above |
 
 ### `]`
 
 | Key | Command | Description |
 |---|---|---|
-| `] d` | `goto_next_diag` | Goto next diagnostic |
+| `] a` | `goto_next_parameter` | Next argument |
+| `] c` | `goto_next_comment` | Next comment |
+| `] d` | `goto_next_diag` | Next diagnostic |
+| `] f` | `goto_next_function` | Next function |
 | `] g` | `goto_next_change` | Next git change |
+| `] p` | `goto_next_paragraph` | Next paragraph |
+| `] t` | `goto_next_class` | Next type |
+| `] T` | `goto_next_test` | Next test |
 | `] x` | `goto_next_test_failure` | Next failed test |
+| `] space` | `add_newline_below` | Add a blank line below |
 
 ### `g`
 

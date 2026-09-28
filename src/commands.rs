@@ -127,6 +127,24 @@ commands! {
         join_selections => "Join lines inside selection",
         select_register => "Select register for the next command",
         match_brackets => "Goto matching bracket",
+        goto_next_function => "Next function",
+        goto_prev_function => "Previous function",
+        goto_next_class => "Next type",
+        goto_prev_class => "Previous type",
+        goto_next_parameter => "Next argument",
+        goto_prev_parameter => "Previous argument",
+        goto_next_comment => "Next comment",
+        goto_prev_comment => "Previous comment",
+        goto_next_test => "Next test",
+        goto_prev_test => "Previous test",
+        goto_next_paragraph => "Next paragraph",
+        goto_prev_paragraph => "Previous paragraph",
+        expand_selection => "Grow selection to the enclosing syntax node",
+        shrink_selection => "Shrink selection back",
+        select_next_sibling => "Select next syntax sibling",
+        select_prev_sibling => "Select previous syntax sibling",
+        add_newline_below => "Add a blank line below",
+        add_newline_above => "Add a blank line above",
         select_textobject_inner => "Select inside object",
         select_textobject_around => "Select around object",
         surround_add => "Surround add",
@@ -187,8 +205,8 @@ commands! {
         save_selection => "Save this spot to jump back to",
         hover => "Show docs under cursor",
         completion => "Invoke completion popup (LSP)",
-        goto_next_diag => "Goto next diagnostic",
-        goto_prev_diag => "Goto previous diagnostic",
+        goto_next_diag => "Next diagnostic",
+        goto_prev_diag => "Previous diagnostic",
         goto_next_change => "Next git change",
         goto_prev_change => "Previous git change",
         diagnostics_picker => "Diagnostics",
@@ -868,6 +886,213 @@ fn textobject(cx: &mut Context, ch: char, kind: to::Kind) {
         };
         cx.editor.set_status(format!("m{ch}: {what}"));
     }
+}
+
+// ── Syntax structure (body in structure.rs) ───────────────────────────────
+
+/// Each range through `f(tree, text, range)`; ranges it has no answer for stay. Says so when there's no
+/// syntax tree, or nothing was found anywhere.
+fn by_syntax(
+    cx: &mut Context,
+    what: &str,
+    f: impl Fn(&tree_sitter::Tree, &ropey::Rope, Range) -> Option<Range>,
+) {
+    let doc = cx.editor.doc();
+    let Some(tree) = doc.syntax.as_ref().and_then(|s| s.tree.as_ref()) else {
+        return cx.editor.set_status(format!("{what} needs syntax (tree-sitter) for this file"));
+    };
+    let mut found = false;
+    let sel = doc.selection().transform(|r| match f(tree, &doc.text, r) {
+        Some(n) => {
+            found = true;
+            n
+        }
+        None => r,
+    });
+    if found {
+        cx.editor.doc_mut().set_selection(sel);
+    }
+}
+
+fn expand_selection(cx: &mut Context) {
+    let before = cx.editor.doc().selection().clone();
+    for _ in 0..cx.count() {
+        by_syntax(cx, "A-o", crate::structure::expand);
+    }
+    let doc = cx.editor.doc();
+    let after = doc.selection().clone();
+    if after != before {
+        let entry = (doc.id, doc.version(), before, after);
+        cx.editor.expand_history.push(entry);
+    }
+}
+
+fn shrink_selection(cx: &mut Context) {
+    for _ in 0..cx.count() {
+        // Retrace A-o while the selection is still what it left
+        let doc = cx.editor.doc();
+        let (id, version, now) = (doc.id, doc.version(), doc.selection().clone());
+        match cx.editor.expand_history.pop() {
+            Some((d, v, before, after)) if (d, v) == (id, version) && after == now => {
+                cx.editor.doc_mut().set_selection(before);
+            }
+            _ => {
+                cx.editor.expand_history.clear();
+                by_syntax(cx, "A-i", crate::structure::shrink);
+            }
+        }
+    }
+}
+
+fn select_next_sibling(cx: &mut Context) {
+    for _ in 0..cx.count() {
+        by_syntax(cx, "A-n", |t, x, r| crate::structure::sibling(t, x, r, Direction::Forward));
+    }
+}
+fn select_prev_sibling(cx: &mut Context) {
+    for _ in 0..cx.count() {
+        by_syntax(cx, "A-p", |t, x, r| crate::structure::sibling(t, x, r, Direction::Backward));
+    }
+}
+
+/// `]f` `[f` … — select the next/previous `name` textobject (count times). In select mode the selection
+/// grows to it instead.
+fn goto_object(cx: &mut Context, name: &str, dir: Direction) {
+    let doc = cx.editor.doc();
+    let Some(q) = doc.syntax.as_ref().and_then(|s| s.lang.textobjects.as_ref()) else {
+        return cx.editor.set_status(format!("no {name}s here — needs syntax (tree-sitter) for this file"));
+    };
+    let extend = is_select(cx);
+    let n = cx.count();
+    let mut found = false;
+    let sel = {
+        let Some(tree) = doc.syntax.as_ref().and_then(|s| s.tree.as_ref()) else { return };
+        let text = &doc.text;
+        doc.selection().transform(|r| {
+            let mut cur = r;
+            for _ in 0..n {
+                match crate::structure::textobject(q, tree, text, cur, name, dir) {
+                    Some(o) => (cur, found) = (o, true),
+                    None => break,
+                }
+            }
+            if extend && cur != r {
+                let to = if dir == Direction::Forward { cur.to() } else { cur.from() };
+                r.put_cursor(text, to, true)
+            } else {
+                cur
+            }
+        })
+    };
+    if found {
+        cx.editor.push_jump();
+        cx.editor.doc_mut().set_selection(sel);
+    } else {
+        cx.editor
+            .set_status(format!("no {} {name}", if dir == Direction::Forward { "next" } else { "previous" }));
+    }
+}
+fn goto_next_function(cx: &mut Context) {
+    goto_object(cx, "function", Direction::Forward)
+}
+fn goto_prev_function(cx: &mut Context) {
+    goto_object(cx, "function", Direction::Backward)
+}
+fn goto_next_class(cx: &mut Context) {
+    goto_object(cx, "class", Direction::Forward)
+}
+fn goto_prev_class(cx: &mut Context) {
+    goto_object(cx, "class", Direction::Backward)
+}
+fn goto_next_parameter(cx: &mut Context) {
+    goto_object(cx, "parameter", Direction::Forward)
+}
+fn goto_prev_parameter(cx: &mut Context) {
+    goto_object(cx, "parameter", Direction::Backward)
+}
+fn goto_next_comment(cx: &mut Context) {
+    goto_object(cx, "comment", Direction::Forward)
+}
+fn goto_prev_comment(cx: &mut Context) {
+    goto_object(cx, "comment", Direction::Backward)
+}
+fn goto_next_test(cx: &mut Context) {
+    goto_object(cx, "test", Direction::Forward)
+}
+fn goto_prev_test(cx: &mut Context) {
+    goto_object(cx, "test", Direction::Backward)
+}
+
+/// `]p` / `[p` — to the first line of the next paragraph / the start of this (or the previous) one,
+/// selecting what was passed over.
+fn goto_paragraph(cx: &mut Context, dir: Direction) {
+    let n = cx.count();
+    let extend = is_select(cx);
+    motion(cx, |t, r| {
+        let blank = |l: usize| mv::first_non_whitespace(t, l) == mv::line_end(t, l);
+        let last = mv::last_line(t);
+        let mut line = mv::line_of(t, r.cursor(t));
+        for _ in 0..n {
+            match dir {
+                Direction::Forward => {
+                    while line < last && !blank(line) {
+                        line += 1;
+                    }
+                    while line < last && blank(line) {
+                        line += 1;
+                    }
+                }
+                Direction::Backward => {
+                    line = line.saturating_sub(1);
+                    while line > 0 && blank(line) {
+                        line -= 1;
+                    }
+                    while line > 0 && !blank(line - 1) {
+                        line -= 1;
+                    }
+                }
+            }
+        }
+        let pos = mv::line_start(t, line);
+        if extend { r.put_cursor(t, pos, true) } else { Range::new(r.cursor(t), pos) }
+    });
+}
+fn goto_next_paragraph(cx: &mut Context) {
+    goto_paragraph(cx, Direction::Forward)
+}
+fn goto_prev_paragraph(cx: &mut Context) {
+    goto_paragraph(cx, Direction::Backward)
+}
+
+/// `]space` / `[space` — blank lines below/above each selection's lines (count of them), staying in
+/// normal mode with the selection where it was.
+fn add_newline(cx: &mut Context, below: bool) {
+    let n = cx.count();
+    let doc = cx.editor.doc_mut();
+    let text = &doc.text;
+    let mut spots: Vec<usize> = doc
+        .selection()
+        .ranges()
+        .iter()
+        .map(|&r| {
+            let (first, last) = mv::line_span(text, r);
+            if below { mv::line_full_end(text, last) } else { mv::line_start(text, first) }
+        })
+        .collect();
+    spots.sort_unstable();
+    spots.dedup();
+    let tx = Transaction::new(spots.iter().map(|&p| Change::insert(p, "\n".repeat(n))).collect());
+    // Above: text at the insert point moves down with its line; below: it's the next line's, stays put
+    let assoc = if below { Assoc::Before } else { Assoc::After };
+    let sel =
+        doc.selection().transform(|r| Range::new(tx.map_pos(r.anchor, assoc), tx.map_pos(r.head, assoc)));
+    doc.apply_with(&tx, sel);
+}
+fn add_newline_below(cx: &mut Context) {
+    add_newline(cx, true)
+}
+fn add_newline_above(cx: &mut Context) {
+    add_newline(cx, false)
 }
 
 fn surround_add(cx: &mut Context) {

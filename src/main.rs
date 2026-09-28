@@ -40,6 +40,7 @@ mod session;
 mod settings;
 mod signature;
 mod split;
+mod structure;
 mod syntax;
 mod term;
 mod test_results;
