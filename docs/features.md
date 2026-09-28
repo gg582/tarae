@@ -112,7 +112,8 @@ configs carry over as they are.
 - **Pickers** (nucleo fuzzy matching, the same matcher as Helix) — `space f` files (`git ls-files` in a repository, so
   `.gitignore` is respected), `space b` buffers, `space /` global search (ripgrep when `rg` is installed, a built-in
   regex search otherwise). Lists fill in on a worker thread. `C-n`/`C-p` or arrows, `Tab`, `Enter`, `Esc`. On terminals
-  at least 100 columns wide, a syntax-highlighted preview sits on the right ([screenshot](screenshots/m2-file-picker.png)). `space '` reopens the last one as you left it
+  at least 100 columns wide, a syntax-highlighted preview sits on the right ([screenshot](screenshots/m2-file-picker.png)). The wheel over the preview scrolls it, as do `C-f`/`C-b`. `space '` reopens the last one as you
+  left it
 - **Replace across files** — in the `space /` results, `C-r` asks for the replacement (`$1` for groups) and replaces
   the matches still listed (type to narrow them first). A preview lists each file with its diff; Enter replaces in
   every listed file (one undo step each, unsaved buffers included); `:wa` saves them
@@ -146,7 +147,8 @@ configs carry over as they are.
   red underline, compared against the index (so staged changes leave it). Ticks on the scrollbar, `+3 −2` in the
   status line, `]g` `[g` between hunks. Stage or commit elsewhere and come back, and the baseline is reread
   ([screenshot](screenshots/ux-git.png))
-- **`space g`** — `f` changed files (status letters in the gutter's colors) · `p` the change under the cursor as a
+- **`space g`** — `f` changed files (status letters in the gutter's colors, `+N −M`, each file's diff against HEAD
+  as the preview; Enter opens it at its first change) · `p` the change under the cursor as a
   card · `r` undo it (an ordinary undoable edit) · `s` stage just that change (what the buffer has, saved or not) ·
   `b` blame at the cursor line's end — author, age, commit summary — on by default (`editor.git-blame`), `b` flips it
 - **Large files** (≥ 1 MB) load in the background — a 100 MB file shows its first screen in 18 ms. Editing and saving

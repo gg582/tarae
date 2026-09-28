@@ -89,6 +89,56 @@ pub fn parse_status(out: &str) -> Vec<(char, String)> {
     v
 }
 
+/// A changed file for `space g f`: status letter, path, first changed line (from 0), diff against HEAD.
+#[derive(Clone, Debug)]
+pub struct Changed {
+    pub letter: char,
+    pub path: PathBuf,
+    pub line: usize,
+    pub diff: std::sync::Arc<Vec<crate::editdiff::FileDiff>>,
+}
+
+/// Files diffed at most (a huge untracked tree lists without previews past this).
+const MAX_DIFFED: usize = 300;
+
+/// `git status` from `cwd`'s repository, each file diffed HEAD → working tree (runs on a worker thread).
+fn changed(cwd: &Path) -> Result<Vec<Changed>, String> {
+    use crate::editdiff::{FileOp, LineKind, diff_file};
+    let top = PathBuf::from(git(cwd, &["rev-parse", "--show-toplevel"], None)?.trim());
+    let out = git(&top, &["status", "--porcelain=v1", "-z", "--untracked-files=all"], None)?;
+    Ok(parse_status(&out)
+        .into_iter()
+        .enumerate()
+        .map(|(i, (letter, rel))| {
+            let path = top.join(&rel);
+            let (before, after) = if i < MAX_DIFFED {
+                let head = git(&top, &["show", &format!("HEAD:{rel}")], None).ok();
+                let now = std::fs::read(&path)
+                    .ok()
+                    .filter(|b| b.len() < 1 << 20)
+                    .map(|b| String::from_utf8_lossy(&b).into_owned());
+                (head, now)
+            } else {
+                (None, None)
+            };
+            let op = match (&before, &after) {
+                (None, Some(_)) => FileOp::Create,
+                (Some(_), None) => FileOp::Delete,
+                _ => FileOp::Edit,
+            };
+            let rope = |s: Option<String>| Rope::from_str(&s.unwrap_or_default());
+            let diff = diff_file(path.clone(), op, rope(before), rope(after));
+            // First changed line: the first added or removed line's number
+            let line = diff
+                .lines
+                .iter()
+                .find(|l| !matches!(l.kind, LineKind::Context | LineKind::Gap))
+                .map_or(0, |l| l.number.saturating_sub(1));
+            Changed { letter, path, line, diff: std::sync::Arc::new(vec![diff]) }
+        })
+        .collect())
+}
+
 /// One line's blame.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Blame {
@@ -290,34 +340,49 @@ impl Editor {
         });
     }
 
-    /// `space g f` — changed and untracked files (`git status`), status letters in the gutter's colors.
+    /// `space g f` — changed and untracked files (`git status`), status letters in the gutter's colors, each
+    /// file's diff against HEAD as the preview (computed on a worker thread), `+N −M` on the right.
     pub fn git_changed_files(&mut self) {
         let cwd = std::env::current_dir().unwrap_or_default();
-        let fill = move || -> Result<Vec<crate::picker::Item>, String> {
-            let top = PathBuf::from(git(&cwd, &["rev-parse", "--show-toplevel"], None)?.trim());
-            let out = git(&top, &["status", "--porcelain=v1", "-z", "--untracked-files=all"], None)?;
-            let items: Vec<_> = parse_status(&out)
-                .into_iter()
-                .map(|(letter, rel)| {
-                    let path = top.join(&rel);
-                    let (glyph, scope) = match letter {
-                        'A' => ("A", "diff.plus"),
-                        '?' => ("?", "diff.plus"),
-                        'D' => ("D", "diff.minus"),
-                        'R' => ("R", "diff.delta"),
-                        _ => ("M", "diff.delta"),
-                    };
-                    crate::picker::Item {
-                        label: path.strip_prefix(&cwd).unwrap_or(&path).display().to_string(),
-                        action: crate::picker::Action::Open(path),
-                        hint: String::new(),
-                        glyph: Some((glyph, scope)),
-                    }
-                })
-                .collect();
-            if items.is_empty() { Err("nothing changed".into()) } else { Ok(items) }
-        };
-        self.open_picker(crate::picker::Picker::new("changed files", Vec::new(), true), Some(Box::new(fill)));
+        self.git_changed_files_in(cwd);
+    }
+
+    /// Changed files of `cwd`'s repository, labels relative to it.
+    pub fn git_changed_files_in(&mut self, cwd: PathBuf) {
+        self.note("reading git status…");
+        self.events.jobs().spawn(move || {
+            let result = changed(&cwd);
+            move |ed: &mut Editor| {
+                ed.status = None;
+                let list = match result {
+                    Ok(l) if l.is_empty() => return ed.note("nothing changed"),
+                    Ok(l) => l,
+                    Err(e) => return ed.set_error(e),
+                };
+                let items = list
+                    .iter()
+                    .enumerate()
+                    .map(|(n, c)| {
+                        let (glyph, scope) = match c.letter {
+                            'A' => ("A", "diff.plus"),
+                            '?' => ("?", "diff.plus"),
+                            'D' => ("D", "diff.minus"),
+                            'R' => ("R", "diff.delta"),
+                            _ => ("M", "diff.delta"),
+                        };
+                        let d = &c.diff[0];
+                        crate::picker::Item {
+                            label: c.path.strip_prefix(&cwd).unwrap_or(&c.path).display().to_string(),
+                            action: crate::picker::Action::ChangedFile(n),
+                            hint: format!("+{} −{}", d.added, d.removed),
+                            glyph: Some((glyph, scope)),
+                        }
+                    })
+                    .collect();
+                ed.changed_files = list;
+                ed.open_picker(crate::picker::Picker::new("changed files", items, true), None);
+            }
+        });
     }
 
     /// `space g b` — blame at the cursor line's end, on/off.

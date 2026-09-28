@@ -158,7 +158,7 @@ pub fn build(edit: &Value, enc: Encoding, mut old: impl FnMut(&Path) -> Option<R
 }
 
 /// One file: line diff + context + highlight + syntax colors.
-fn diff_file(path: PathBuf, op: FileOp, before: Rope, after: Rope) -> FileDiff {
+pub fn diff_file(path: PathBuf, op: FileOp, before: Rope, after: Rope) -> FileDiff {
     use imara_diff::intern::InternedInput;
     use imara_diff::{Algorithm, diff};
     let (bs, as_) = (before.to_string(), after.to_string());

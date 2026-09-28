@@ -197,6 +197,8 @@ pub fn render(editor: &mut Editor, out: &mut impl Write, w: u16, h: u16) -> io::
             .picker
             .as_ref()
             .map(|p| (lay.text_top as usize + 3, PickerBox::new(&lay, p).list_rows)),
+        picker_preview_x: editor.picker.as_ref().and_then(|p| PickerBox::new(&lay, p).preview_x()),
+        popup: std::cell::Cell::new(None),
         offer_buttons: offer.as_ref().map(|c| c.buttons.clone()).unwrap_or_default(),
     };
     editor.refresh_search(focus_lay.text_rows);
@@ -2515,6 +2517,11 @@ struct PickerBox {
 }
 
 impl PickerBox {
+    /// Leftmost column of the preview card (None without one).
+    fn preview_x(&self) -> Option<usize> {
+        (self.preview_w > 0).then(|| self.x + self.list_w + 2 + 1)
+    }
+
     /// Covers the whole text area — so text/line numbers behind don't leak. Cards inset one cell each side;
     /// when wide enough (≥ 100 cells) left list card / one-cell gap / right preview card.
     /// Vertical: half-row edge · input row · divider · list… · half-row edge.
@@ -2665,6 +2672,14 @@ fn draw_picker(
             },
             _ => String::new(),
         },
+        Some(Action::ChangedFile(n)) => match editor.changed_files.get(*n) {
+            Some(c) => format!(
+                "{}  {}",
+                rel_path(&c.path),
+                crate::editdiff::summary(&c.diff).split("  ").nth(1).unwrap_or("")
+            ),
+            None => String::new(),
+        },
         Some(Action::ReplaceFile(n)) => match editor.replace_plan.get(*n) {
             Some(f) => format!(
                 "{}  {}",
@@ -2677,6 +2692,15 @@ fn draw_picker(
     };
     let rows = b.list_rows + 4;
     let preview = if b.preview_w > 0 { preview_lines(p, editor, b.list_rows) } else { None };
+    // Diffs scroll by dropping rows from the top (the last page stays)
+    let preview = preview.map(|v| match v {
+        PreviewView::Diff { files, mut rows, styles } => {
+            let skip = p.preview_scroll.min(rows.len().saturating_sub(b.list_rows));
+            rows.drain(..skip);
+            PreviewView::Diff { files, rows, styles }
+        }
+        v => v,
+    });
     let (left_w, right_w) = (lw + 2, if b.preview_w > 0 { b.preview_w + 2 } else { 0 });
     let edge = Style { fg: card.bg, bg: ui.base.bg, ..Style::default() };
     for row in 0..rows {
@@ -2845,6 +2869,15 @@ fn preview_lines<'a>(p: &'a Picker, editor: &'a Editor, rows: usize) -> Option<P
             let cur = mv::line_of(&d.text, d.selection().primary().head);
             (&d.text, d.syntax.as_ref(), Some(cur))
         }
+        Action::ChangedFile(n) => {
+            let c = editor.changed_files.get(*n)?;
+            if c.diff[0].lines.is_empty() {
+                return Some(PreviewView::Note("no line changes (mode or binary)".into()));
+            }
+            let rows = (0..c.diff[0].lines.len()).map(|li| (0, Some(li))).collect();
+            let styles = crate::syntax::capture_styles(|n| editor.theme.try_get(n));
+            return Some(PreviewView::Diff { files: c.diff.clone(), rows, styles });
+        }
         Action::ReplaceFile(n) => {
             let f = editor.replace_plan.get(*n)?;
             let rows = (0..f.diff[0].lines.len()).map(|li| (0, Some(li))).collect();
@@ -2896,7 +2929,9 @@ fn preview_lines<'a>(p: &'a Picker, editor: &'a Editor, rows: usize) -> Option<P
         }
     };
     let last = mv::last_line(text);
-    let first = focus.map_or(0, |f| f.saturating_sub(rows / 3)).min(last);
+    // Scrolled (wheel / C-f C-b) from where it opens, but not past the last page
+    let first = (focus.map_or(0, |f| f.saturating_sub(rows / 3)) + p.preview_scroll)
+        .min(last.saturating_sub(rows.saturating_sub(1)).max(focus.unwrap_or(0).min(last)));
     let end_line = (first + rows).min(last + 1).max(first + 1) - 1;
     let spans = match syntax.filter(|s| s.tree.is_some()) {
         Some(syn) => crate::syntax::highlights(
@@ -4602,7 +4637,9 @@ fn draw_popup(
     lay: &Layout,
     out: &mut impl Write,
 ) -> io::Result<()> {
-    draw_float(lines, at, editor.popup_scroll, 20, ui, editor, lay, out)
+    let rect = draw_float(lines, at, editor.popup_scroll, 20, ui, editor, lay, out)?;
+    editor.screen.popup.set(rect);
+    Ok(())
 }
 
 /// Lines in a doc box by the cursor (hover, diagnostic card): at most `cap` rows, scrolled `scroll` rows.
@@ -4616,7 +4653,7 @@ fn draw_float(
     editor: &Editor,
     lay: &Layout,
     out: &mut impl Write,
-) -> io::Result<()> {
+) -> io::Result<Option<(usize, usize, usize, usize)>> {
     let natural = lines.iter().map(crate::markdown::Line::width).max().unwrap_or(0);
     let inner = natural.clamp(10, 76).min(lay.edit_w.saturating_sub(4));
     let rows = crate::markdown::wrap(lines, inner, dim_style(ui, editor));
@@ -4627,7 +4664,7 @@ fn draw_float(
     let down = want <= below || (want > above && below >= above);
     let room = if down { below } else { above };
     if room < 3 {
-        return Ok(());
+        return Ok(None);
     }
     let max_rows = (room - 2).min(cap);
     let h = rows.len().min(max_rows) + 2;
@@ -4635,7 +4672,8 @@ fn draw_float(
     let x0 = (cx as usize).saturating_sub(2).min(lay.edit_w.saturating_sub(inner + 4));
     // Skip as far as scrolled, but stop at the last page (so more C-d doesn't give an empty box)
     let skip = scroll.min(rows.len().saturating_sub(max_rows));
-    draw_doc_box(&rows[skip..], (x0, y0), inner, max_rows, ui, editor, out)
+    draw_doc_box(&rows[skip..], (x0, y0), inner, max_rows, ui, editor, out)?;
+    Ok(Some((x0, y0, inner + 4, h)))
 }
 
 fn dim_style(ui: &Ui, editor: &Editor) -> Style {
@@ -4746,7 +4784,7 @@ fn draw_diagnostic_card(
     if lines.is_empty() {
         return Ok(());
     }
-    draw_float(&lines, at, 0, 12, ui, editor, lay, out)
+    draw_float(&lines, at, 0, 12, ui, editor, lay, out).map(|_| ())
 }
 
 /// Diagnostics underlining the cell under the cursor — most severe first.
@@ -5289,6 +5327,58 @@ mod tests {
         assert_eq!(ed.cursor_line(), 49, "top of the screen + scrolloff");
         keys(&mut ed, "g b");
         assert_eq!(ed.cursor_line(), 55);
+    }
+
+    /// The wheel scrolls what it's over: floating docs, a picker's preview (C-f/C-b too), or the list.
+    #[test]
+    fn wheel_scrolls_popups_and_previews() {
+        use crate::event::{Mouse, MouseKind};
+        let mut ed = Editor::new(Config::default());
+        ed.docs[0].text = Rope::from_str("x\n");
+        let (w, h) = (120, 30);
+        render(&mut ed, &mut Vec::new(), w, h).unwrap();
+        let docs: Vec<crate::markdown::Line> = (0..60)
+            .map(|i| {
+                crate::markdown::Line::Code(vec![crate::markdown::Span {
+                    text: format!("doc {i}"),
+                    style: Style::default(),
+                }])
+            })
+            .collect();
+        ed.popup = Some(docs);
+        render(&mut ed, &mut Vec::new(), w, h).unwrap();
+        let (px, py, ..) = ed.screen.popup.get().expect("docs card drawn");
+        ed.handle_mouse(Mouse {
+            kind: MouseKind::ScrollDown,
+            x: (px + 2) as u16,
+            y: (py + 1) as u16,
+            alt: false,
+        });
+        assert_eq!(ed.popup_scroll, 3);
+        ed.popup = None;
+        // A picker with a preview: over the preview it scrolls, over the list it moves
+        let item = |n: usize| crate::picker::Item {
+            label: format!("buffer {n}"),
+            action: Action::Buffer(ed.docs[0].id),
+            hint: String::new(),
+            glyph: None,
+        };
+        let items = vec![item(1), item(2), item(3)];
+        ed.open_picker(Picker::new("buffers", items, false), None);
+        render(&mut ed, &mut Vec::new(), w, h).unwrap();
+        let x = ed.screen.picker_preview_x.expect("preview card at this width");
+        ed.handle_mouse(Mouse { kind: MouseKind::ScrollDown, x: (x + 3) as u16, y: 10, alt: false });
+        assert_eq!(ed.picker.as_ref().map(|p| (p.preview_scroll, p.selected)), Some((3, 0)));
+        ed.handle_key("C-b".parse().unwrap());
+        assert_eq!(ed.picker.as_ref().map(|p| p.preview_scroll), Some(0));
+        ed.handle_mouse(Mouse { kind: MouseKind::ScrollDown, x: 5, y: 10, alt: false });
+        assert_eq!(
+            ed.picker.as_ref().map(|p| (p.preview_scroll, p.selected)),
+            Some((0, 0)),
+            "3 of 3 wraps to 0"
+        );
+        ed.handle_key("C-f".parse().unwrap());
+        assert_eq!(ed.picker.as_ref().map(|p| p.preview_scroll), Some(10));
     }
 
     #[test]

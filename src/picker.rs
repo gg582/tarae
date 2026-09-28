@@ -35,6 +35,8 @@ pub enum Action {
     },
     /// File `n` of the pending replace-across-files plan (replace.rs).
     ReplaceFile(usize),
+    /// File `n` of the changed-files list (`space g f` — its diff is the preview).
+    ChangedFile(usize),
     /// Line `line` (from 0) of the file, byte `col` within that line.
     Goto {
         path: PathBuf,
@@ -81,6 +83,8 @@ pub struct Picker {
     pub preview: bool,
     /// Global search results: the pattern (`C-r` replaces the listed matches).
     pub grep: Option<String>,
+    /// Preview scrolled this many lines from where it opens (back to 0 when the selection changes).
+    pub preview_scroll: usize,
     /// Preview cache (path → loading/content). Filled by a worker thread.
     pub previews: HashMap<PathBuf, Preview>,
     matcher: Matcher,
@@ -103,6 +107,7 @@ impl Picker {
             view: Vec::new(),
             preview: true,
             grep: None,
+            preview_scroll: 0,
             previews: HashMap::new(),
             matcher: Matcher::new(config),
         };
@@ -122,6 +127,7 @@ impl Picker {
     }
 
     pub fn refilter(&mut self) {
+        self.preview_scroll = 0;
         let pat = Pattern::parse(&self.query, CaseMatching::Smart, Normalization::Smart);
         let mut buf = Vec::new();
         let mut scored: Vec<(u32, u32)> = self
@@ -155,6 +161,7 @@ impl Picker {
             return;
         }
         self.selected = (self.selected as isize + delta).rem_euclid(n as isize) as usize;
+        self.preview_scroll = 0;
     }
 
     /// Items the query leaves listed, best first.
@@ -218,6 +225,7 @@ impl Action {
             Action::Buffer(_)
             | Action::Jump { .. }
             | Action::ReplaceFile(_)
+            | Action::ChangedFile(_)
             | Action::Code(_)
             | Action::Command(_)
             | Action::Typed(_)

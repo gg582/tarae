@@ -147,6 +147,10 @@ pub struct Screen {
     pub picker_list: Option<(usize, usize)>,
     /// Grammar download offer buttons: (row, start col, end col, key to feed when clicked).
     pub offer_buttons: Vec<(usize, usize, usize, char)>,
+    /// Column where the picker's preview card starts (the wheel scrolls it there).
+    pub picker_preview_x: Option<usize>,
+    /// The floating docs card this frame (x, y, width, height) — drawing fills it in; the wheel scrolls it.
+    pub popup: std::cell::Cell<Option<(usize, usize, usize, usize)>>,
 }
 
 /// One pane of a split: what it shows (a document) + its scroll. Cursor and selection are the document's.
@@ -203,6 +207,8 @@ pub struct Editor {
     /// shown in the preview picker.
     pub(crate) replace_targets: Option<(String, crate::replace::Targets)>,
     pub(crate) replace_plan: Vec<crate::replace::FilePlan>,
+    /// `space g f`: per file, its path, first changed line and diff against HEAD.
+    pub(crate) changed_files: Vec<crate::gitmenu::Changed>,
     /// `space g b` blame (gitmenu.rs).
     pub blame: crate::gitmenu::BlameState,
     /// `gw` labels on screen (labels.rs) — the next two keys pick one.
@@ -401,6 +407,7 @@ impl Editor {
             blame: Default::default(),
             replace_targets: None,
             replace_plan: Vec::new(),
+            changed_files: Vec::new(),
             next_id: 0,
         };
         ed.new_scratch();
@@ -818,7 +825,10 @@ impl Editor {
             return;
         }
         if let Some(p) = self.picker.as_mut() {
+            let over_preview = s.picker_preview_x.is_some_and(|px| x >= px);
             match m.kind {
+                K::ScrollUp if over_preview => p.preview_scroll = p.preview_scroll.saturating_sub(3),
+                K::ScrollDown if over_preview => p.preview_scroll += 3,
                 K::ScrollUp => p.move_by(-3),
                 K::ScrollDown => p.move_by(3),
                 K::Down => {
@@ -833,6 +843,17 @@ impl Editor {
                 _ => {}
             }
             return;
+        }
+        // Wheel over the floating docs (hover, `space g p`) scrolls them
+        if let (Some(lines), Some((px, py, pw, ph))) = (self.popup.as_ref(), s.popup.get())
+            && (px..px + pw).contains(&x)
+            && (py..py + ph).contains(&y)
+        {
+            match m.kind {
+                K::ScrollDown => return self.popup_scroll = (self.popup_scroll + 3).min(lines.len()),
+                K::ScrollUp => return self.popup_scroll = self.popup_scroll.saturating_sub(3),
+                _ => {}
+            }
         }
         if let (Some(cx), Some(c)) = (s.chat_x, self.chat.as_mut())
             && x >= cx
@@ -1052,6 +1073,9 @@ impl Editor {
             (Code::Up | Code::BackTab, _) | (Code::Char('p'), true) => p.move_by(-1),
             (Code::PageDown, _) | (Code::Char('d'), true) => p.move_by(10),
             (Code::PageUp, _) | (Code::Char('u'), true) => p.move_by(-10),
+            // The preview pane
+            (Code::Char('f'), true) => p.preview_scroll += 10,
+            (Code::Char('b'), true) => p.preview_scroll = p.preview_scroll.saturating_sub(10),
             (Code::Backspace, _) => p.pop(),
             (Code::Char(c), false) if !key.alt => p.push(c),
             _ => {}
@@ -1106,6 +1130,13 @@ impl Editor {
                 self.replace_apply(&[n]);
                 Ok(())
             }
+            // Open it at its first change
+            Action::ChangedFile(n) => match self.changed_files.get(n).cloned() {
+                Some(c) => {
+                    return self.run_picker_action(Action::Goto { path: c.path, line: c.line, col: 0 });
+                }
+                None => Ok(()),
+            },
             Action::Jump { index, .. } => {
                 self.jump_to_entry(index);
                 Ok(())
@@ -2147,6 +2178,15 @@ mod tests {
             "{:?}",
             ed.blame_here(1)
         );
+        // Changed files: each file's diff against HEAD is the preview, +N −M on the right; Enter opens it
+        // at its first change
+        feed(&mut ed, ":w<ret>");
+        ed.git_changed_files_in(dir.clone());
+        settle_until(&mut ed, |ed| ed.picker.is_some());
+        let p = ed.picker.as_ref().unwrap();
+        assert_eq!((p.items()[0].label.as_str(), p.items()[0].hint.as_str()), ("a.txt", "+2 −1"));
+        assert_eq!(ed.changed_files[0].line, 0, "the first change");
+        assert!(!ed.changed_files[0].diff[0].lines.is_empty());
         std::fs::remove_dir_all(&dir).ok();
     }
 
