@@ -1,0 +1,55 @@
+# split_vertical · 100x16 · theme meok · cursor 8:55
+## text
+00  tarae  ›  src  ›  demo.rs  ›  ƒ main
+01  ▎ src/demo.rs                                    │ ▎ src/demo.rs
+02  17 use std::collections::HashMap;               ▐│  6 }
+03  16                                              ▐│  5
+04  15 ▎ Counts how often each word appears.        ▐│  4 fn main() {
+05     ▎                                            ▐│  3     let text = "the quick brown fox jumps ov
+06     ▎ Words are split on whitespace; case is     ▐│  2     let counts = word_counts(text);
+07     ▎ kept.                                      ▐│  1     println!("{} distinct words", counts.len
+08  12 pub fn word_counts(text: &str) -> HashMap<&st▐│ 18 }                                           ▐
+09  11     let mut counts = HashMap::new();         ▐│                                                ▐
+10  10     for word in text.split_whitespace() {     │                                                ▐
+11   9     │   *counts.entry(word).or_insert(0) += 1 │                                                ▐
+12   8     }                                         │                                                ▐
+13   7     counts                                    │                                                ▐
+14  ▐ NORMAL ▌                                                                  rust   utf-8 LF   18:1
+15
+## bg · surface per cell, blank = ui.background
+00
+01                                                    1111111111111111111111111111111111111111111111111
+02
+03
+04     222222222222222222222222222222222222222222222
+05     222222222222222222222222222222222222222222222
+06     222222222222222222222222222222222222222222222
+07     222222222222222222222222222222222222222222222
+08                                                        Accccccccccccccccccccccccccccccccccccccccccc
+09
+10
+11
+12
+13
+14   AAAAAAAA
+15
+## fg · visible glyphs only, blank = unlisted color, UPPERCASE = bold
+00  ddddd  f  ddd  f  TTTTTTT  f    dddd
+01  f ddddddddddd                                    f a TTTTTTTTTTT
+02  ff                                              ff  f
+03  ff                                              ff  f
+04  ff                                              ff  f
+05                                                  ff  f                gggg ggggg ggggg ggg ggggg gg
+06                                                  ff  f
+07                                                  ff  f              ggg gggggggg gggggg
+08  ff                                              ff AA                                             f
+09  ff                                              ff                                                f
+10  ff                                               f                                                f
+11   f                                               f                                                f
+12   f                                               f                                                f
+13   f                                               f                                                f
+14  a BBBBBB a                                                                  dddd   ddddd dd   TTTT
+15
+## legend
+bg: c=ui.cursorline.primary  A=ui.cursor.primary  1=other  2=other
+fg: a=ui.accent  t=ui.text.focus  d=ui.virtual  f=ui.linenr  g=diff.plus  B=bold

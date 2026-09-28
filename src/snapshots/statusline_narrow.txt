@@ -1,0 +1,25 @@
+# statusline_narrow · 30x6 · theme meok · cursor 2:5
+## text
+00  tarae  ›  src  ›  demo.rs
+01 ▎  1 use std::collections::Ha▐
+02    2
+03    1 ▎ Counts how often
+04  ▐ NORMAL ▌   ● 1   ▲ 1   2:1
+05
+## bg · surface per cell, blank = ui.background
+00
+01      k11111111111111111111111
+02      Accccccccccccccccccccccc
+03      222222222222222222222222
+04   AAAAAAAA
+05
+## fg · visible glyphs only, blank = unlisted color, UPPERCASE = bold
+00  ddddd  f  ddd  f  TTTTTTT
+01 e  f                         e
+02    A
+03    f
+04  a BBBBBB a   e e   w w   TTT
+05
+## legend
+bg: c=ui.cursorline.primary  A=ui.cursor.primary  k=ui.cursor  1=other  2=other
+fg: a=ui.accent  t=ui.text.focus  d=ui.virtual  f=ui.linenr  e=error  w=warning  B=bold

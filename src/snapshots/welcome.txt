@@ -1,0 +1,97 @@
+# welcome · 100x30 · theme meok · cursor hidden
+## text
+00  tarae
+01
+02
+03
+04
+05
+06
+07
+08
+09                                              t a r a e
+10                                   타래 · Helix keys, Claude inside
+11
+12                                space f  Open a file
+13                                space /  Search in project
+14                                space l  Chat with Claude
+15                                space ?  Find a command
+16                                :tutor   Learn the keys in 10 minutes
+17                                :q       Quit
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27                                          tarae 0.1.0 · meok
+28  ▐ NORMAL ▌                                                                          utf-8 LF   1:1
+29
+## bg · surface per cell, blank = ui.background
+00
+01
+02
+03
+04
+05
+06
+07
+08
+09
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28   AAAAAAAA
+29
+## fg · visible glyphs only, blank = unlisted color, UPPERCASE = bold
+00  ddddd
+01
+02
+03
+04
+05
+06
+07
+08
+09                                              A A A A A
+10                                   dddd d ddddd ddddd dddddd dddddd
+11
+12                                AAAAA A
+13                                AAAAA A
+14                                AAAAA A
+15                                AAAAA A
+16                                AAAAAA
+17                                AA
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27                                          fffff fffff f ffff
+28  a BBBBBB a                                                                          ddddd dd   TTT
+29
+## legend
+bg: A=ui.cursor.primary
+fg: a=ui.accent  t=ui.text.focus  d=ui.virtual  f=ui.linenr  B=bold

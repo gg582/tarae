@@ -1,0 +1,97 @@
+# file_picker · 100x30 · theme meok · cursor 2:8
+## text
+00  tarae
+01  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+02   › main              files in demo  1/4   src/snapshots/fixtures/demo/src/main.rs
+03   ──────────────────────────────────────   ───────────────────────────────────────────────────────
+04  ▎ src/main.rs                                1  mod parse;
+05                                               2
+06                                               3  /// Reads `host:port` pairs and prints the ones t
+07                                               4  fn main() {
+08                                               5      let lines = ["127.0.0.1:8080", "nope", "[::1]
+09                                               6      for line in lines {
+10                                               7          match parse::addr(line) {
+11                                               8              Some((host, port)) => println!("{host
+12                                               9              None => eprintln!("skipped {line:?}")
+13                                              10          }
+14                                              11      }
+15                                              12  }
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+28  ▐ NORMAL ▌                                                                          utf-8 LF   1:1
+29
+## bg · surface per cell, blank = ui.background
+00
+01
+02  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+03  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+04  PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+05  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+06  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+07  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+08  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+09  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+10  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+11  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+12  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+13  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+14  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+15  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+16  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+17  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+18  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+19  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+20  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+21  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+22  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+23  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+24  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+25  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+26  pppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppppppppppppp
+27
+28   AAAAAAAA
+29
+## fg · visible glyphs only, blank = unlisted color, UPPERCASE = bold
+00  ddddd
+01
+02   A TTTT              fffff ff ffff  fff   ddddddddddddddddddddddddddddddddTTTTTTT
+03   ffffffffffffffffffffffffffffffffffffff   fffffffffffffffffffffffffffffffffffffffffffffffffffffff
+04  a TTTTAAAATTT                                f
+05                                               f
+06                                               f
+07                                               f
+08                                               f                   gggggggggggggggg  gggggg  gggggg
+09                                               f
+10                                               f
+11                                               f                                             gggggg
+12                                               f                                gggggggg ggggggggg
+13                                              ff
+14                                              ff
+15                                              ff
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28  a BBBBBB a                                                                          ddddd dd   TTT
+29
+## legend
+bg: p=ui.popup  P=ui.menu.selected  A=ui.cursor.primary
+fg: a=ui.accent  t=ui.text.focus  d=ui.virtual  f=ui.linenr  g=diff.plus  B=bold

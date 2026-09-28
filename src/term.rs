@@ -2939,8 +2939,12 @@ fn draw_header(editor: &Editor, ui: &Ui, lay: &Layout, out: &mut impl Write) -> 
     let sep = |keep| Seg { text: "  ›  ".into(), style: faint, keep };
     let mut left = vec![Seg { text: " ".into(), style: ui.base, keep: 255 }];
     let cwd = std::env::current_dir().ok();
-    if let Some(p) = cwd.as_ref().and_then(|d| d.file_name()) {
-        left.push(Seg { text: p.to_string_lossy().into_owned(), style: dim, keep: 20 });
+    let project = cwd.as_ref().and_then(|d| d.file_name()).map(|p| p.to_string_lossy().into_owned());
+    // Tests: a fixed project name (the checkout folder's name varies — worktrees, CI)
+    #[cfg(test)]
+    let project = project.map(|_| "tarae".to_string());
+    if let Some(p) = project {
+        left.push(Seg { text: p, style: dim, keep: 20 });
         left.push(sep(20));
     }
     let rel = doc.path.as_ref().map(|p| cwd.as_ref().and_then(|c| p.strip_prefix(c).ok()).unwrap_or(p));
@@ -3025,19 +3029,21 @@ struct Seg {
 /// Drop less important segments from left/right until they fit in `width`.
 fn fit_segments(left: &mut Vec<Seg>, right: &mut Vec<Seg>, width: usize) {
     let total = |l: &Vec<Seg>, r: &Vec<Seg>| l.iter().chain(r).map(|s| s.text.width()).sum::<usize>();
+    // A blank spacer right after a segment with the same `keep` belongs to it — they go together, or a
+    // stray gap is left behind (and the fill that should separate left from right goes missing)
+    let drop = |v: &mut Vec<Seg>, i: usize| {
+        let keep = v.remove(i).keep;
+        if v.get(i).is_some_and(|s| s.keep == keep && s.text.trim().is_empty()) {
+            v.remove(i);
+        }
+    };
     while total(left, right) > width {
         let lmin = left.iter().enumerate().min_by_key(|(_, s)| s.keep).map(|(i, s)| (s.keep, i));
         let rmin = right.iter().enumerate().min_by_key(|(_, s)| s.keep).map(|(i, s)| (s.keep, i));
         match (lmin, rmin) {
-            (Some((lk, li)), Some((rk, _))) if lk <= rk => {
-                left.remove(li);
-            }
-            (_, Some((_, ri))) => {
-                right.remove(ri);
-            }
-            (Some((_, li)), None) => {
-                left.remove(li);
-            }
+            (Some((lk, li)), Some((rk, _))) if lk <= rk => drop(left, li),
+            (_, Some((_, ri))) => drop(right, ri),
+            (Some((_, li)), None) => drop(left, li),
             (None, None) => break,
         }
     }
@@ -4632,6 +4638,10 @@ fn draw_cmdline(
     }
     Ok(None)
 }
+
+#[cfg(test)]
+#[path = "term_snapshots.rs"]
+mod snapshot_tests;
 
 #[cfg(test)]
 mod tests {

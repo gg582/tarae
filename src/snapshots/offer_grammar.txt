@@ -1,0 +1,97 @@
+# offer_grammar · 100x30 · theme meok · cursor 1:4
+## text
+00  tarae  ›  app.py
+01   1 def greet(name):
+02   1     return f"hello, {name}"
+03   2
+04   3
+05   4 print(greet("tarae"))
+06
+07
+08
+09
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21                                                    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+22                                                     ▎ Python syntax colors
+23                                                       Download and build the tree-sitter grammar?
+24
+25                                                       y Install   n Not now
+26                                                    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+27
+28  ▐ NORMAL ▌                                                                          utf-8 LF   1:1
+29
+## bg · surface per cell, blank = ui.background
+00
+01     Accccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+02
+03
+04
+05
+06
+07
+08
+09
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22                                                    pppppppppppppppppppppppppppppppppppppppppppppppp
+23                                                    pppppppppppppppppppppppppppppppppppppppppppppppp
+24                                                    pppppppppppppppppppppppppppppppppppppppppppppppp
+25                                                    pppppppppppppppppppppppppppppppppppppppppppppppp
+26
+27
+28   AAAAAAAA
+29
+## fg · visible glyphs only, blank = unlisted color, UPPERCASE = bold
+00  ddddd  f  TTTTTT
+01   A
+02   f
+03   f
+04   f
+05   f
+06
+07
+08
+09
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22                                                     a BBBBBB BBBBBB BBBBBB
+23
+24
+25                                                       A           A
+26
+27
+28  a BBBBBB a                                                                          ddddd dd   TTT
+29
+## legend
+bg: c=ui.cursorline.primary  p=ui.popup  A=ui.cursor.primary
+fg: a=ui.accent  t=ui.text.focus  d=ui.virtual  f=ui.linenr  B=bold

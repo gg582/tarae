@@ -1,0 +1,97 @@
+# chat_empty · 100x30 · theme meok · cursor 26:65
+## text
+00  tarae  ›  src  ›  demo.rs
+01   1 use std::collections::HashMap;                          ▐  claude                         ready
+02   1                                                         ▐  ────────────────────────────────────
+03   2 ▎ Counts how often each word appears.                   ▐
+04     ▎                                                       ▐
+05     ▎ Words are split on whitespace; case is kept.          ▐
+06   5 pub fn word_counts(text: &str) -> HashMap<&str, usize> {▐
+07   6     let mut counts = HashMap::new();                    ▐
+08   7     for word in text.split_whitespace() {               ▐
+09   8     │   *counts.entry(word).or_insert(0) += 1;          ▐  ▎ Ask Claude
+10   9     }                                                   ▐
+11  10     counts                                              ▐  It sees demo.rs — your cursor,
+12  11 }                                                       ▐  selection and diagnostics.
+13  12                                                         ▐
+14  13 fn main() {                                             ▐  tab for a suggestion
+15  14     let text = "the quick brown fox jumps over the lazy ▐  › Explain what this file does
+16  15     let counts = word_counts(text);                     ▐  › Why is this diagnostic happening?
+17  16     println!("{} distinct words", counts.len()); // 타래▐  › Write tests for the selection
+18  17 }                                                       ▐
+19                                                             ▐
+20                                                             ▐
+21                                                             ▐
+22                                                             ▐
+23                                                             ▐
+24                                                             ▐
+25                                                             ▐  ────────────────────────────────────
+26                                                             ▐  › Ask about demo.rs…
+27                                                             ▐  enter send  esc editor  C-l new
+28  ▐ NORMAL ▌                                                                   rust   utf-8 LF   1:1
+29
+## bg · surface per cell, blank = ui.background
+00
+01     Accccccccccccccccccccccccccccccccccccccccccccccccccccccc ppppppppppppppppppppppppppppppppppppppp
+02                                                              ppppppppppppppppppppppppppppppppppppppp
+03     11111111111111111111111111111111111111111111111111111111 ppppppppppppppppppppppppppppppppppppppp
+04     11111111111111111111111111111111111111111111111111111111 ppppppppppppppppppppppppppppppppppppppp
+05     11111111111111111111111111111111111111111111111111111111 ppppppppppppppppppppppppppppppppppppppp
+06                                                              ppppppppppppppppppppppppppppppppppppppp
+07                                                              ppppppppppppppppppppppppppppppppppppppp
+08                                                              ppppppppppppppppppppppppppppppppppppppp
+09                                                              ppppppppppppppppppppppppppppppppppppppp
+10                                                              ppppppppppppppppppppppppppppppppppppppp
+11                                                              ppppppppppppppppppppppppppppppppppppppp
+12                                                              ppppppppppppppppppppppppppppppppppppppp
+13                                                              ppppppppppppppppppppppppppppppppppppppp
+14                                                              ppppppppppppppppppppppppppppppppppppppp
+15                                                              ppppppppppppppppppppppppppppppppppppppp
+16                                                              ppppppppppppppppppppppppppppppppppppppp
+17                                                              ppppppppppppppppppppppppppppppppppppppp
+18                                                              ppppppppppppppppppppppppppppppppppppppp
+19                                                              ppppppppppppppppppppppppppppppppppppppp
+20                                                              ppppppppppppppppppppppppppppppppppppppp
+21                                                              ppppppppppppppppppppppppppppppppppppppp
+22                                                              ppppppppppppppppppppppppppppppppppppppp
+23                                                              ppppppppppppppppppppppppppppppppppppppp
+24                                                              ppppppppppppppppppppppppppppppppppppppp
+25                                                              ppppppppppppppppppppppppppppppppppppppp
+26                                                              ppppppppppppppppppppppppppppppppppppppp
+27                                                              ppppppppppppppppppppppppppppppppppppppp
+28   AAAAAAAA
+29
+## fg · visible glyphs only, blank = unlisted color, UPPERCASE = bold
+00  ddddd  f  ddd  f  TTTTTTT
+01   A                                                            TTTTTT                         fffff
+02   f                                                            ffffffffffffffffffffffffffffffffffff
+03   f
+04
+05
+06   f
+07   f
+08   f
+09   f                                                            a TTT TTTTTT
+10   f
+11  ff                                                            dd dddd ddddddd d dddd ddddddd
+12  ff                                                            ddddddddd ddd dddddddddddd
+13  ff
+14  ff                                                            DDD fff f ffffffffff
+15  ff                gggg ggggg ggggg ggg ggggg gggg ggg gggg    f ddddddd dddd dddd dddd dddd
+16  ff                                                            f ddd dd dddd dddddddddd dddddddddd
+17  ff              ggg gggggggg gggggg                           f ddddd ddddd ddd ddd ddddddddd
+18  ff
+19
+20
+21
+22
+23
+24
+25                                                                ffffffffffffffffffffffffffffffffffff
+26                                                                A fff fffff ffffffff
+27                                                                DDDDD ffff  DDD ffffff  DDD fff
+28  a BBBBBB a                                                                   dddd   ddddd dd   TTT
+29
+## legend
+bg: c=ui.cursorline.primary  p=ui.popup  A=ui.cursor.primary  1=other
+fg: a=ui.accent  t=ui.text.focus  d=ui.virtual  f=ui.linenr  g=diff.plus  B=bold

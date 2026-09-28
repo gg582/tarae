@@ -1,0 +1,97 @@
+# doc_comment_folded · 100x30 · theme meok · cursor 20:4
+## text
+00  tarae  ›  src  ›  point.rs  ›  τ Point  ›  ƒ dist2
+01  21 ▎ Tiny geometry helpers.
+02  20
+03  19 ▎ A point on the plane.
+04     ▎
+05     ▎ • x grows to the right
+06     ▎ • y grows downward
+07     ▎
+08     ▎ Examples
+09     ▎
+10     ▎  let p = Point { x: 1, y: 2 };
+11   9 #[derive(Clone, Copy, Debug)]
+12   8 pub struct Point {
+13   7     pub x: i32,
+14   6     pub y: i32,
+15   5 }
+16   4
+17   3 impl Point {
+18   2     ▎ Distance to other, _squared_ — cheap to compare.
+19   1     pub fn dist2(self, other: Point) -> i32 {
+20  22     │   let (dx, dy) = (self.x - other.x, self.y - other.y);
+21   1     │   dx * dx + dy * dy
+22   2     }
+23   3 }
+24
+25
+26
+27
+28  ▐ NORMAL ▌                                                                  rust   utf-8 LF   22:1
+29
+## bg · surface per cell, blank = ui.background
+00
+01     111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+02
+03     111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+04     111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+05     111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+06     111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+07     111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+08     111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+09     111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+10     11                                                                                             1
+11
+12
+13
+14
+15
+16
+17
+18         11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+19
+20     Accccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+21
+22
+23
+24
+25
+26
+27
+28   AAAAAAAA
+29
+## fg · visible glyphs only, blank = unlisted color, UPPERCASE = bold
+00  ddddd  f  ddd  f  TTTTTTTT  f    ddddd  f    ddddd
+01  ff
+02  ff
+03  ff                  BBBBB
+04
+05       a
+06       a
+07
+08       AAAAAAAA
+09
+10
+11   f   aaaaaa
+12   f
+13   f
+14   f
+15   f
+16   f
+17   f
+18   f
+19   f
+20  AA     d
+21   f     d
+22   f
+23   f
+24
+25
+26
+27
+28  a BBBBBB a                                                                  dddd   ddddd dd   TTTT
+29
+## legend
+bg: c=ui.cursorline.primary  A=ui.cursor.primary  1=other
+fg: a=ui.accent  t=ui.text.focus  d=ui.virtual  f=ui.linenr  B=bold

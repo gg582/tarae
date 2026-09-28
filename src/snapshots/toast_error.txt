@@ -1,0 +1,97 @@
+# toast_error · 100x30 · theme meok · cursor 1:4
+## text
+00  tarae  ›  src  ›  demo.rs
+01   1 use std::collections::HashMap;                                     ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+02   1                                                                     ▎ demo.rs changed on disk
+03   2 ▎ Counts how often each word appears.                              ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+04     ▎                                                 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+05     ▎ Words are split on whitespace; case is kept.     ▎ Couldn't save demo.rs: permission denied
+06   5 pub fn word_counts(text: &str) -> HashMap<&str, us▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+07   6     let mut counts = HashMap::new();
+08   7     for word in text.split_whitespace() {
+09   8     │   *counts.entry(word).or_insert(0) += 1;
+10   9     }
+11  10     counts
+12  11 }
+13  12
+14  13 fn main() {
+15  14     let text = "the quick brown fox jumps over the lazy dog";
+16  15     let counts = word_counts(text);
+17  16     println!("{} distinct words", counts.len()); // 타래
+18  17 }
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28  ▐ NORMAL ▌                                                                   rust   utf-8 LF   1:1
+29
+## bg · surface per cell, blank = ui.background
+00
+01     Acccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc                            c
+02                                                                        pppppppppppppppppppppppppppp
+03     1111111111111111111111111111111111111111111111111111111111111111111                            1
+04     11111111111111111111111111111111111111111111111111                                             1
+05     11111111111111111111111111111111111111111111111111ppppppppppppppppppppppppppppppppppppppppppppp1
+06
+07
+08
+09
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28   AAAAAAAA
+29
+## fg · visible glyphs only, blank = unlisted color, UPPERCASE = bold
+00  ddddd  f  ddd  f  TTTTTTT
+01   A
+02   f                                                                     w
+03   f
+04
+05                                                        e
+06   f
+07   f
+08   f
+09   f
+10   f
+11  ff
+12  ff
+13  ff
+14  ff
+15  ff                gggg ggggg ggggg ggg ggggg gggg ggg gggg gggg
+16  ff
+17  ff              ggg gggggggg gggggg
+18  ff
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28  a BBBBBB a                                                                   dddd   ddddd dd   TTT
+29
+## legend
+bg: c=ui.cursorline.primary  p=ui.popup  A=ui.cursor.primary  1=other
+fg: a=ui.accent  t=ui.text.focus  d=ui.virtual  f=ui.linenr  e=error  w=warning  g=diff.plus  B=bold

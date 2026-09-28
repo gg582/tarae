@@ -1,0 +1,97 @@
+# lsp_completion · 100x30 · theme meok · cursor 3:11
+## text
+00  tarae  ›  src  ›  demo.rs ●  ›  ƒ main
+01    2 fn main() {
+02    1     let v = vec![3, 1, 2];
+03    3     v.
+04    1 }  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+05         ▎ƒ push          fn(&mut self, value: i32)     fn(&mut self, value: i32)
+06          ƒ pop        fn(&mut self) -> Option<i32>
+07          ƒ len                  fn(&self) -> usize     Appends an element to the back of a
+08          ƒ iter         fn(&self) -> Iter<'_, i32>     collection.
+09          ƒ capacity             fn(&self) -> usize
+10         ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀   Panics
+11
+12                                                        Panics if the new capacity exceeds
+13                                                        isize::MAX bytes.
+14                                                      ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28  ▐ INSERT ▌                                                                   rust   utf-8 LF   3:7
+29  tab select   enter accept   C-x complete   esc close
+## bg · surface per cell, blank = ui.background
+00
+01
+02
+03      ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+04
+05         PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPp ppppppppppppppppppppppppppppppppppppppppppppppp
+06         pppppppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppp
+07         pppppppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppp
+08         pppppppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppp
+09         pppppppppppppppppppppppppppppppppppppppppppp ppppppppppppppppppppppppppppppppppppppppppppppp
+10                                                      ppppppppppppppppppppppppppppppppppppppppppppppp
+11                                                      ppppppppppppppppppppppppppppppppppppppppppppppp
+12                                                      ppppppppppppppppppppppppppppppppppppppppppppppp
+13                                                      ppppppppppppppppppppppppppppppppppppppppppppppp
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28   iiiiiiii
+29
+## fg · visible glyphs only, blank = unlisted color, UPPERCASE = bold
+00  ddddd  f  ddd  f  TTTTTTT a  f    dddd
+01    f
+02    f
+03    G
+04    f
+05         a  TTTT          ddddddd ddddd dddddd dddd
+06                       ddddddd ddddd dd ddddddddddd
+07                                 ddddddddd dd ddddd
+08                         ddddddddd dd dddddddd dddd
+09                                 ddddddddd dd ddddd
+10                                                        AAAAAA
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28  g BBBBBB g                                                                   dddd   ddddd dd   TTT
+29  DDD ffffff   DDDDD ffffff   DDD ffffffff   DDD fffff
+## legend
+bg: c=ui.cursorline.primary  p=ui.popup  P=ui.menu.selected  i=ui.cursor.primary.insert
+fg: a=ui.accent  t=ui.text.focus  d=ui.virtual  f=ui.linenr  g=diff.plus  B=bold
