@@ -97,6 +97,17 @@ pub fn execute(editor: &mut Editor, line: &str) -> Result<(), String> {
             Ok(())
         }
         "sh" | "run-shell-command" => shell(editor, rest),
+        "pipe" | "|" | "pipe-to" | "insert-output" | "append-output" => {
+            use crate::shell::Pipe;
+            let kind = match cmd {
+                "pipe-to" => Pipe::To,
+                "insert-output" => Pipe::Insert,
+                "append-output" => Pipe::Append,
+                _ => Pipe::Replace,
+            };
+            editor.shell_pipe(kind, rest);
+            Ok(())
+        }
         "set" => set(editor, rest, false),
         "set!" => set(editor, rest, true),
         "toggle" => toggle(editor, rest),

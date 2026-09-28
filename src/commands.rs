@@ -239,6 +239,11 @@ commands! {
         commit_undo_checkpoint => "Make what's typed an undo step",
         repeat_last_insert => "Repeat last insert",
         toggle_comments => "Comment or uncomment lines",
+        shell_pipe => "Pipe selections through a command",
+        shell_pipe_to => "Send selections to a command",
+        shell_insert_output => "Insert a command's output before",
+        shell_append_output => "Insert a command's output after",
+        shell_keep_pipe => "Keep selections a command accepts",
     }
 }
 
@@ -1945,6 +1950,22 @@ fn repeat_last_insert(cx: &mut Context) {
 }
 
 /// `C-c` — line comments over the selections' lines (block comments where a language has only those).
+fn shell_pipe(cx: &mut Context) {
+    cx.editor.open_prompt(PromptKind::Shell(crate::shell::Pipe::Replace), "");
+}
+fn shell_pipe_to(cx: &mut Context) {
+    cx.editor.open_prompt(PromptKind::Shell(crate::shell::Pipe::To), "");
+}
+fn shell_insert_output(cx: &mut Context) {
+    cx.editor.open_prompt(PromptKind::Shell(crate::shell::Pipe::Insert), "");
+}
+fn shell_append_output(cx: &mut Context) {
+    cx.editor.open_prompt(PromptKind::Shell(crate::shell::Pipe::Append), "");
+}
+fn shell_keep_pipe(cx: &mut Context) {
+    cx.editor.open_prompt(PromptKind::Shell(crate::shell::Pipe::Keep), "");
+}
+
 fn toggle_comments(cx: &mut Context) {
     let Some(spec) = cx.editor.lang_spec() else {
         return cx.editor.set_status("no comment syntax for this file");

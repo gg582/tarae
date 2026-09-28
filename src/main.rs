@@ -38,6 +38,7 @@ mod search;
 mod selection;
 mod session;
 mod settings;
+mod shell;
 mod signature;
 mod split;
 mod structure;

@@ -56,6 +56,8 @@ pub enum PromptKind {
     BreakCondition,
     LogMessage,
     Watch,
+    /// `|` `A-|` `!` `A-!` `$` — a shell command for the selections (shell.rs).
+    Shell(crate::shell::Pipe),
 }
 
 impl PromptKind {
@@ -73,6 +75,7 @@ impl PromptKind {
             PromptKind::BreakCondition => "break when:",
             PromptKind::LogMessage => "log:",
             PromptKind::Watch => "watch:",
+            PromptKind::Shell(p) => p.label(),
         }
     }
 }
@@ -1744,6 +1747,7 @@ impl Editor {
             PromptKind::BreakCondition => self.set_breakpoint_field(false, &text),
             PromptKind::LogMessage => self.set_breakpoint_field(true, &text),
             PromptKind::Watch => self.add_watch(&text),
+            PromptKind::Shell(p) => self.shell_pipe(p, &text),
             PromptKind::Rename => {
                 if !text.is_empty() {
                     let extra = serde_json::json!({ "newName": text });
@@ -1989,6 +1993,33 @@ mod tests {
             let ev = ed.events.recv_timeout(left).expect("event before timeout");
             ed.handle_event(ev);
         }
+    }
+
+    /// `|` replaces each selection with the command's output (one undo step), `!`/`A-!` insert output
+    /// before/after, `$` keeps the selections the command accepts; a failing command changes nothing.
+    #[test]
+    fn shell_pipes_on_selections() {
+        let done = |ed: &Editor| ed.status.as_ref().is_none_or(|(m, _)| !m.starts_with("running"));
+        let mut ed = run("abc def\n", "%s\\w+<ret>|tr a-z A-Z<ret>");
+        settle_until(&mut ed, done);
+        assert_eq!(text(&ed), "ABC DEF\n");
+        assert_eq!(ed.doc().selection().len(), 2, "each selection piped on its own");
+        feed(&mut ed, "u");
+        assert_eq!(text(&ed), "abc def\n", "one undo step");
+        feed(&mut ed, "%s\\w+<ret>$grep b<ret>");
+        settle_until(&mut ed, done);
+        assert_eq!(ed.doc().selection().len(), 1);
+        assert_eq!(selected(&ed), "abc");
+        feed(&mut ed, "!printf x<ret>");
+        settle_until(&mut ed, done);
+        assert_eq!(text(&ed), "xabc def\n");
+        feed(&mut ed, ";<A-!>printf y<ret>");
+        settle_until(&mut ed, done);
+        assert_eq!(text(&ed), "xyabc def\n");
+        feed(&mut ed, "%|exit 1<ret>");
+        settle_until(&mut ed, done);
+        assert_eq!(text(&ed), "xyabc def\n", "failure: nothing changes");
+        assert!(ed.status.as_ref().is_some_and(|(m, _)| m.contains("exit 1")), "{:?}", ed.status);
     }
 
     #[test]

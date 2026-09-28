@@ -12,7 +12,9 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 
 | Key | Command | Description |
 |---|---|---|
+| `!` | `shell_insert_output` | Insert a command's output before |
 | `"` | `select_register` | Select register for the next command |
+| `$` | `shell_keep_pipe` | Keep selections a command accepts |
 | `%` | `select_all` | Select whole document |
 | `*` | `search_selection` | Search for selection |
 | `,` | `keep_primary_selection` | Keep primary selection |
@@ -66,7 +68,9 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `x` | `extend_line_below` | Select line (again: extend down) |
 | `X` | `extend_line_up` + `extend_to_line_bounds` | Extend up, then extend selection to line bounds |
 | `y` | `yank` | Yank selection |
+| `\|` | `shell_pipe` | Pipe selections through a command |
 | `~` | `switch_case` | Switch (toggle) case |
+| `A-!` | `shell_append_output` | Insert a command's output after |
 | `A-.` | `repeat_last_motion` | Repeat last motion |
 | `A-;` | `flip_selections` | Flip selection cursor and anchor |
 | `` A-` `` | `switch_to_uppercase` | Switch to uppercase |
@@ -84,6 +88,7 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `A-s` | `split_selection_on_newline` | Split selection on newlines |
 | `A-up` | `expand_selection` | Grow selection to the enclosing syntax node |
 | `A-x` | `extend_to_line_bounds` | Extend selection to line bounds |
+| `A-\|` | `shell_pipe_to` | Send selections to a command |
 | `C-b` | `page_up` | Move page up |
 | `C-c` | `toggle_comments` | Comment or uncomment lines |
 | `C-d` | `half_page_down` | Move half page down |
@@ -340,6 +345,10 @@ Type `:` in normal mode. `Tab` completes command names and their arguments (path
 | `:set-language` | `:lang` | Set this buffer's language |
 | `:grammar-install` |  | Fetch and build syntax grammars (this file's language, a name, or all) |
 | `:run-shell-command` | `:sh` | Run a shell command in the background |
+| `:pipe` | `:\|` | Pipe the selections through a command (output replaces them) |
+| `:pipe-to` |  | Send the selections to a command (output ignored) |
+| `:insert-output` |  | Insert a command's output before each selection |
+| `:append-output` |  | Insert a command's output after each selection |
 | `:ask` |  | Ask Claude to edit the selection |
 | `:ask-cancel` |  | Cancel the Claude request |
 | `:chat` |  | Open the Claude chat (optionally send a message) |

@@ -54,6 +54,9 @@ configs carry over as they are.
   `]c` comment, `]T` test (each a jump) · `]p` `[p` paragraphs · `]space` `[space` add a blank line below/above
 - `m` mode — `mm` matching bracket; `mi`/`ma` + `w W p ( [ { < " ' `` ` `` or the tree-sitter objects `f t a c T`
   (function, type, argument, comment, test — repeat to widen one layer at a time); `ms` `mr` `md` surround
+- Shell — `|` pipes each selection through a command (its output replaces it), `A-|` only sends it, `!`/`A-!` insert
+  a command's output before/after each selection, `$` keeps the selections the command succeeds on (`:pipe`,
+  `:pipe-to`, `:insert-output`, `:append-output`). Commands run in the background; nothing changes if they fail
 - Registers `"x`, `_` (black hole), and `+` = the system clipboard (`space y`, `space p`, `space P`) · macros: `Q`
   records, `q` replays (with a count), `"xQ` records into a named register
 - Grapheme-cluster aware everywhere — movement, deletion, `r`, `f`, and drawing treat `é`, NFD Hangul, 👍🏽, 👨‍👩‍👧, and
