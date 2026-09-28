@@ -10,7 +10,7 @@ repository = "https://github.com/eth219/tarae"
 [dependencies]
 libc = "0.2"
 anyhow = "1.0.104"
-crossterm = "0.29.0"
+crossterm = { version = "0.29.0", features = ["use-dev-tty"] }  # poll(2)-based input — mio drops a key that arrives with a resize
 libloading = "0.9.0"
 nucleo-matcher = "0.3.1"
 regex = { version = "1.13.1", default-features = false, features = ["std", "perf", "unicode-perl", "unicode-case", "unicode-gencat", "unicode-script"] }  # size: without unicode-age·bool·segment (−150 KB)

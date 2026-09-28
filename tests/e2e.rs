@@ -545,16 +545,15 @@ fn survives_resizing_to_a_tiny_terminal_and_back() {
     t.wait_for("cursor on line 3 at 20x5", |s| s.status().contains("3:1"));
 
     // Degenerate sizes (a pane dragged shut, a minimized window) with keys arriving meanwhile. The screen
-    // isn't checked here (vt100 itself overflows on one column), nor where `j` lands (with no rows there's
-    // no view to move in) — what matters is that tarae doesn't panic.
+    // isn't checked here (vt100 itself overflows on one column) — only that no key is lost or panics.
     for (w, h) in [(1, 1), (0, 0), (100, 1)] {
         t.resize(w, h);
         t.send("j");
     }
 
     t.resize(COLS, ROWS);
-    t.wait_for("a full redraw at 100x30", |s| {
-        s.rows.len() == ROWS as usize && s.status().contains("NORMAL") && s.contains("line number 20")
+    t.wait_for("a full redraw at 100x30, cursor on line 6", |s| {
+        s.rows.len() == ROWS as usize && s.status().contains("6:1") && s.contains("line number 20")
     });
     // Still responsive after all that
     t.send("gg");
@@ -664,4 +663,33 @@ fn claude_code_lock_file_stays_in_the_sandbox_and_is_removed_on_quit() {
     t.command("q");
     assert_eq!(t.wait_exit().code(), Some(0));
     assert!(sb.lock_files().is_empty(), "lock file removed on quit");
+}
+
+/// A key that arrives together with a resize must not be lost. crossterm's default (mio, edge-triggered)
+/// input source returned the resize and left the key unread until the next input — tarae uses the
+/// `use-dev-tty` source (level-triggered poll) instead.
+#[test]
+fn keys_right_after_a_resize_are_not_lost() {
+    let sb = Sandbox::new("resizekeys");
+    let body: String = (1..=60).map(|i| format!("line number {i}\n")).collect();
+    sb.write("long.txt", &body);
+    let mut t = sb.spawn(&["long.txt"]);
+    t.wait_text("line number 1");
+    t.send("j");
+    t.wait_for("cursor on line 2", |s| s.status().contains("2:1"));
+    // Every step changes the size, so every key races a SIGWINCH
+    for (i, (w, h)) in
+        [(60, 12), (80, 20), (50, 10), (90, 25), (70, 15), (100, 0), (0, 30)].into_iter().enumerate()
+    {
+        t.resize(w, h);
+        t.send("j");
+        if h > 2 && w > 20 {
+            let want = format!("{}:1", i + 3);
+            t.wait_for(&format!("cursor on line {}", i + 3), |s| s.status().contains(&want));
+        }
+    }
+    t.resize(COLS, ROWS);
+    t.wait_for("cursor on line 9 after the degenerate sizes", |s| s.status().contains("9:1"));
+    t.command("q");
+    assert_eq!(t.wait_exit().code(), Some(0));
 }
