@@ -54,6 +54,8 @@ pub struct EditorConfig {
     pub inline_diagnostics: bool,
     /// Cursor on an underline whose message doesn't fit at the line end → the message in full in a card.
     pub cursor_diagnostics: bool,
+    /// Insert mode: an opener gets its closer (`pairs.rs`).
+    pub auto_pairs: bool,
     /// Auto-save: "off" | "focus" (when the terminal loses focus) | "idle" (+ after 2 s without input).
     pub auto_save: String,
     /// On save, record the undo history; restore it on reopen (`undofile.rs`).
@@ -88,6 +90,7 @@ impl Default for EditorConfig {
             restore_session: true,
             inline_diagnostics: true,
             cursor_diagnostics: true,
+            auto_pairs: true,
             auto_save: "focus".into(),
             persistent_undo: true,
             agent_claude_code: true,

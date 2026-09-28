@@ -74,6 +74,7 @@ commands! {
         extend_prev_word_start => "Extend to start of previous word",
         extend_next_word_end => "Extend to end of next word",
         goto_line_start => "Goto line start",
+        goto_line_end_newline => "Goto end of line (after the last char)",
         goto_line_end => "Goto line end",
         goto_first_nonwhitespace => "Goto first non-blank in line",
         goto_file_start => "Go to file start (or line <n>)",
@@ -210,6 +211,14 @@ commands! {
         insert_tab => "Insert tab char",
         delete_char_backward => "Delete previous char",
         delete_char_forward => "Delete next char",
+        delete_word_backward => "Delete previous word",
+        delete_word_forward => "Delete next word",
+        kill_to_line_start => "Delete to start of line",
+        kill_to_line_end => "Delete to end of line",
+        insert_register => "Insert register contents",
+        commit_undo_checkpoint => "Make what's typed an undo step",
+        repeat_last_insert => "Repeat last insert",
+        toggle_comments => "Comment or uncomment lines",
     }
 }
 
@@ -260,7 +269,14 @@ fn insert_at(cx: &mut Context, mut items: Vec<(usize, String, usize)>) {
     items.dedup_by_key(|(p, _, _)| *p);
     let doc = cx.editor.doc_mut();
     let primary = doc.selection().primary_index().min(items.len().saturating_sub(1));
-    let tx = Transaction::new(items.iter().map(|(p, s, _)| Change::insert(*p, s.clone())).collect());
+    // An empty text only moves the cursor (auto-pairs stepping over a closer)
+    let tx = Transaction::new(
+        items
+            .iter()
+            .filter(|(_, s, _)| !s.is_empty())
+            .map(|(p, s, _)| Change::insert(*p, s.clone()))
+            .collect(),
+    );
     let ranges: Vec<Range> =
         items.iter().map(|(p, _, off)| Range::point(tx.map_pos(*p, Assoc::Before) + off)).collect();
     if ranges.is_empty() {
@@ -400,6 +416,9 @@ fn goto_line_end(cx: &mut Context) {
         let (start, end) = (mv::line_start(t, line), mv::line_end(t, line));
         if end > start { crate::graphemes::prev_boundary(t, end) } else { start }
     })
+}
+fn goto_line_end_newline(cx: &mut Context) {
+    goto_in_line(cx, mv::line_end)
 }
 fn goto_first_nonwhitespace(cx: &mut Context) {
     goto_in_line(cx, mv::first_non_whitespace)
@@ -1481,8 +1500,22 @@ fn goto_previous_buffer(cx: &mut Context) {
 // ── Insert mode ──────────────────────────────────────────────────────────
 
 pub fn insert_char(cx: &mut Context, c: char) {
-    let items =
-        cx.editor.doc().selection().ranges().iter().map(|r| (r.head, c.to_string(), c.len_utf8())).collect();
+    use crate::pairs::Typed;
+    let pairs = cx.editor.pairs();
+    let doc = cx.editor.doc();
+    let items = doc
+        .selection()
+        .ranges()
+        .iter()
+        .map(|r| {
+            let text = match crate::pairs::typed(&doc.text, r.head, c, pairs) {
+                Typed::Pair(close) => format!("{c}{close}"),
+                Typed::Skip => String::new(),
+                Typed::Plain => c.to_string(),
+            };
+            (r.head, text, c.len_utf8())
+        })
+        .collect();
     insert_at(cx, items);
 }
 
@@ -1513,11 +1546,167 @@ fn insert_tab(cx: &mut Context) {
 }
 
 fn delete_char_backward(cx: &mut Context) {
+    let pairs = cx.editor.pairs();
+    delete_around(cx, |t, head| {
+        // Inside an empty pair `(|)` — the closer goes too
+        let to = if crate::pairs::inside_pair(t, head, pairs) {
+            crate::graphemes::next_char(t, head)
+        } else {
+            head
+        };
+        (crate::graphemes::prev_boundary(t, head), to)
+    });
+}
+
+/// Insert mode: per cursor, delete the span `f(text, head)` gives (nothing if empty).
+fn delete_around(cx: &mut Context, f: impl Fn(&ropey::Rope, usize) -> (usize, usize)) {
     let doc = cx.editor.doc_mut();
     let tx = Transaction::change_by_selection(doc.selection(), |r| {
-        (r.head > 0).then(|| Change::delete(crate::graphemes::prev_boundary(&doc.text, r.head), r.head))
+        let (from, to) = f(&doc.text, r.head);
+        (from < to).then(|| Change::delete(from, to))
     });
     doc.apply(&tx);
+}
+
+/// `C-w` — back over blanks, then a run of the same kind (word chars or punctuation). At a line start, the
+/// line break.
+fn delete_word_backward(cx: &mut Context) {
+    use crate::graphemes::prev_boundary;
+    use mv::CharClass::{Eol, Whitespace};
+    delete_around(cx, |t, head| {
+        let mut p = head;
+        while p > 0 && mv::class_at(t, prev_boundary(t, p)) == Whitespace {
+            p = prev_boundary(t, p);
+        }
+        if p == 0 {
+            return (0, head);
+        }
+        let class = mv::class_at(t, prev_boundary(t, p));
+        if class == Eol {
+            return (prev_boundary(t, p), head);
+        }
+        while p > 0 && mv::class_at(t, prev_boundary(t, p)) == class {
+            p = prev_boundary(t, p);
+        }
+        (p, head)
+    });
+}
+
+/// `A-d` — over blanks, then a run of the same kind. At a line end, the line break.
+fn delete_word_forward(cx: &mut Context) {
+    use crate::graphemes::next_boundary;
+    use mv::CharClass::{Eol, Whitespace};
+    delete_around(cx, |t, head| {
+        let len = t.len_bytes();
+        let mut p = head;
+        while p < len && mv::class_at(t, p) == Whitespace {
+            p = next_boundary(t, p);
+        }
+        if p == len {
+            return (head, len);
+        }
+        let class = mv::class_at(t, p);
+        if class == Eol {
+            return (head, next_boundary(t, p));
+        }
+        while p < len && mv::class_at(t, p) == class {
+            p = next_boundary(t, p);
+        }
+        (head, p)
+    });
+}
+
+/// `C-u` — back to the indentation (then to the line start; at the line start, joins the line above).
+fn kill_to_line_start(cx: &mut Context) {
+    delete_around(cx, |t, head| {
+        let line = mv::line_of(t, head);
+        let (start, indent) = (mv::line_start(t, line), mv::first_non_whitespace(t, line));
+        let from = if head == start && line > 0 {
+            mv::line_end(t, line - 1)
+        } else if indent < head {
+            indent
+        } else {
+            start
+        };
+        (from, head)
+    });
+}
+
+/// `C-k` — to the line end (at the line end, joins the line below).
+fn kill_to_line_end(cx: &mut Context) {
+    delete_around(cx, |t, head| {
+        let line = mv::line_of(t, head);
+        let end = mv::line_end(t, line);
+        (head, if head == end { mv::line_full_end(t, line) } else { end })
+    });
+}
+
+/// `C-r x` — type register x's contents at each cursor.
+fn insert_register(cx: &mut Context) {
+    cx.editor.on_next_char = Some((
+        |cx, name| match name {
+            '+' => crate::clipboard::paste(&cx.editor.events.jobs(), |ed, s| {
+                ed.with_group(|cx| insert_texts(cx, std::slice::from_ref(&s)))
+            }),
+            _ => match cx.editor.registers.get(&name).cloned() {
+                Some(values) if !values.is_empty() => insert_texts(cx, &values),
+                _ => cx.editor.set_error(format!("register {name} is empty")),
+            },
+        },
+        cx.count,
+    ));
+}
+
+/// Each cursor gets its own value if there's one per cursor, else the last one.
+fn insert_texts(cx: &mut Context, values: &[String]) {
+    let ranges = cx.editor.doc().selection().ranges().to_vec();
+    let items = ranges
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            let s = values[i.min(values.len() - 1)].clone();
+            let n = s.len();
+            (r.head, s, n)
+        })
+        .collect();
+    insert_at(cx, items);
+}
+
+fn commit_undo_checkpoint(cx: &mut Context) {
+    cx.editor.commit_undo_checkpoint();
+}
+
+fn repeat_last_insert(cx: &mut Context) {
+    let n = cx.count();
+    cx.editor.repeat_last_insert(n);
+}
+
+/// `C-c` — line comments over the selections' lines (block comments where a language has only those).
+fn toggle_comments(cx: &mut Context) {
+    let Some(spec) = cx.editor.lang_spec() else {
+        return cx.editor.set_status("no comment syntax for this file");
+    };
+    let block = spec.block_comment.as_ref().map(|(a, b)| (a.as_str(), b.as_str()));
+    let doc = cx.editor.doc_mut();
+    let Some(tx) = crate::comment::toggle(&doc.text, doc.selection(), spec.comment_token.as_deref(), block)
+    else {
+        if spec.comment_token.is_none() && block.is_none() {
+            cx.editor.set_status(format!("{} has no comments", spec.name));
+        }
+        return;
+    };
+    // A cursor stays on its char; a wider selection keeps covering the comment markers it spans
+    let text = &doc.text;
+    let sel = doc.selection().transform(|r| {
+        if r.to() <= crate::graphemes::next_boundary(text, r.from()) {
+            Range::new(tx.map_pos(r.anchor, Assoc::After), tx.map_pos(r.head, Assoc::After))
+        } else if r.is_forward() {
+            Range::new(tx.map_pos(r.anchor, Assoc::Before), tx.map_pos(r.head, Assoc::After))
+        } else {
+            Range::new(tx.map_pos(r.anchor, Assoc::After), tx.map_pos(r.head, Assoc::Before))
+        }
+    });
+    doc.apply_with(&tx, sel);
 }
 
 fn delete_char_forward(cx: &mut Context) {

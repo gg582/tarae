@@ -80,9 +80,9 @@ pub struct Dap {
 /// One breakpoint — condition·log message are optional.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Bp {
-    /// Stops only when this expression is true (`space g C-c`).
+    /// Stops only when this expression is true (`space G C-c`).
     pub condition: Option<String>,
-    /// Prints this text to output instead of stopping — a logpoint (`space g C-l`, `{expr}` = its value).
+    /// Prints this text to output instead of stopping — a logpoint (`space G C-l`, `{expr}` = its value).
     pub log: Option<String>,
     /// Why the adapter rejected it (bad condition etc.) — shown at the end of that line.
     pub rejected: Option<String>,
@@ -386,7 +386,7 @@ pub fn value_scope(v: &str) -> &'static str {
 impl Editor {
     // ── Breakpoints ──────────────────────────────────────────────────────
 
-    /// `F9` · `space g b` — toggles a breakpoint on the current line (sent to the adapter right away
+    /// `F9` · `space G b` — toggles a breakpoint on the current line (sent to the adapter right away
     /// during a session).
     pub fn toggle_breakpoint(&mut self) {
         let Some((path, line)) = self.cursor_file_line() else { return self.note("save the file first") };
@@ -500,7 +500,7 @@ impl Editor {
 
     // ── Start·control ────────────────────────────────────────────────────
 
-    /// `F5` · `space g l` — continue if stopped; with no session, start for the current file's language.
+    /// `F5` · `space G l` — continue if stopped; with no session, start for the current file's language.
     pub fn dap_launch(&mut self) {
         match self.dap.as_ref().map(|d| d.state.clone()) {
             Some(State::Stopped { .. }) => return self.dap_continue(),

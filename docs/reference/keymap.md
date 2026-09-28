@@ -16,6 +16,7 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `%` | `select_all` | Select whole document |
 | `*` | `search_selection` | Search for selection |
 | `,` | `keep_primary_selection` | Keep primary selection |
+| `.` | `repeat_last_insert` | Repeat last insert |
 | `/` | `search` | Search for regex pattern |
 | `:` | `command_mode` | Enter command mode |
 | `;` | `collapse_selection` | Collapse selection into single cursor |
@@ -76,6 +77,7 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `A-s` | `split_selection_on_newline` | Split selection on newlines |
 | `A-x` | `extend_to_line_bounds` | Extend selection to line bounds |
 | `C-b` | `page_up` | Move page up |
+| `C-c` | `toggle_comments` | Comment or uncomment lines |
 | `C-d` | `half_page_down` | Move half page down |
 | `C-f` | `page_down` | Move page down |
 | `C-i` | `jump_forward` | Jump forward again |
@@ -106,7 +108,7 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 |---|---|---|
 | `[ d` | `goto_prev_diag` | Goto previous diagnostic |
 | `[ g` | `goto_prev_change` | Previous git change |
-| `[ t` | `goto_prev_test_failure` | Previous failed test |
+| `[ x` | `goto_prev_test_failure` | Previous failed test |
 
 ### `]`
 
@@ -114,7 +116,7 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 |---|---|---|
 | `] d` | `goto_next_diag` | Goto next diagnostic |
 | `] g` | `goto_next_change` | Next git change |
-| `] t` | `goto_next_test_failure` | Next failed test |
+| `] x` | `goto_next_test_failure` | Next failed test |
 
 ### `g`
 
@@ -172,7 +174,7 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `space C` | `claude_code_mention` | Send selection to Claude Code (@) |
 | `space d` | `diagnostics_picker` | Diagnostics |
 | `space f` | `file_picker` | Open file picker |
-| `space g` | … | More keys — see `space g` below |
+| `space G` | … | More keys — see `space G` below |
 | `space i` | `llm_ask` | Ask Claude to edit selection |
 | `space k` | `hover` | Show docs under cursor |
 | `space l` | `chat_open` | Chat with Claude |
@@ -187,23 +189,23 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 | `space x` | … | More keys — see `space x` below |
 | `space y` | `yank_to_clipboard` | Copy to clipboard |
 
-### `space g`
+### `space G`
 
 | Key | Command | Description |
 |---|---|---|
-| `space g a` | `dap_attach` | Attach to a running program… |
-| `space g b` | `toggle_breakpoint` | Toggle breakpoint |
-| `space g c` | `dap_launch` | Start debugging / continue |
-| `space g i` | `dap_step_in` | Step into |
-| `space g l` | `dap_launch` | Start debugging / continue |
-| `space g n` | `dap_next` | Step over |
-| `space g o` | `dap_step_out` | Step out |
-| `space g p` | `dap_pause` | Pause the program |
-| `space g t` | `dap_terminate` | Stop debugging |
-| `space g w` | `dap_watch` | Watch an expression |
-| `space g W` | `dap_unwatch` | Remove a watch |
-| `space g C-c` | `dap_edit_condition` | Break only when… (condition) |
-| `space g C-l` | `dap_edit_log` | Log here instead of stopping |
+| `space G a` | `dap_attach` | Attach to a running program… |
+| `space G b` | `toggle_breakpoint` | Toggle breakpoint |
+| `space G c` | `dap_launch` | Start debugging / continue |
+| `space G i` | `dap_step_in` | Step into |
+| `space G l` | `dap_launch` | Start debugging / continue |
+| `space G n` | `dap_next` | Step over |
+| `space G o` | `dap_step_out` | Step out |
+| `space G p` | `dap_pause` | Pause the program |
+| `space G t` | `dap_terminate` | Stop debugging |
+| `space G w` | `dap_watch` | Watch an expression |
+| `space G W` | `dap_unwatch` | Remove a watch |
+| `space G C-c` | `dap_edit_condition` | Break only when… (condition) |
+| `space G C-l` | `dap_edit_log` | Log here instead of stopping |
 
 ### `space w`
 
@@ -253,12 +255,27 @@ In the editor you don't need this page: `space ?` finds any command by what it d
 
 | Key | Command | Description |
 |---|---|---|
+| `A-backspace` | `delete_word_backward` | Delete previous word |
+| `A-d` | `delete_word_forward` | Delete next word |
+| `A-del` | `delete_word_forward` | Delete next word |
 | `backspace` | `delete_char_backward` | Delete previous char |
+| `C-d` | `delete_char_forward` | Delete next char |
+| `C-h` | `delete_char_backward` | Delete previous char |
+| `C-j` | `insert_newline` | Insert newline char |
+| `C-k` | `kill_to_line_end` | Delete to end of line |
+| `C-r` | `insert_register` | Insert register contents |
+| `C-s` | `commit_undo_checkpoint` | Make what's typed an undo step |
+| `C-u` | `kill_to_line_start` | Delete to start of line |
+| `C-w` | `delete_word_backward` | Delete previous word |
 | `C-x` | `completion` | Invoke completion popup (LSP) |
 | `del` | `delete_char_forward` | Delete next char |
 | `down` | `move_visual_line_down` | Move down (visual line) |
+| `end` | `goto_line_end_newline` | Goto end of line (after the last char) |
 | `esc` | `normal_mode` | Enter normal mode |
+| `home` | `goto_line_start` | Goto line start |
 | `left` | `move_char_left` | Move left |
+| `pagedown` | `page_down` | Move page down |
+| `pageup` | `page_up` | Move page up |
 | `ret` | `insert_newline` | Insert newline char |
 | `right` | `move_char_right` | Move right |
 | `tab` | `insert_tab` | Insert tab char |

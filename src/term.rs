@@ -412,15 +412,15 @@ fn draw_debug_panel(
     used += what.width();
     let hints: &[(&str, &str)] = match d.state {
         State::Stopped { .. } if d.request == "attach" => {
-            &[("F5", "continue"), ("F10", "over"), ("F11", "into"), ("F12", "out"), ("space g t", "detach")]
+            &[("F5", "continue"), ("F10", "over"), ("F11", "into"), ("F12", "out"), ("space G t", "detach")]
         }
         State::Stopped { .. } => {
-            &[("F5", "continue"), ("F10", "over"), ("F11", "into"), ("F12", "out"), ("space g t", "stop")]
+            &[("F5", "continue"), ("F10", "over"), ("F11", "into"), ("F12", "out"), ("space G t", "stop")]
         }
-        State::Exited(_) => &[("F5", "restart"), ("space g t", "close")],
+        State::Exited(_) => &[("F5", "restart"), ("space G t", "close")],
         // Attached session: only detach (the remote program keeps running)
-        _ if d.request == "attach" => &[("space g p", "pause"), ("space g t", "detach")],
-        _ => &[("space g p", "pause"), ("space g t", "stop")],
+        _ if d.request == "attach" => &[("space G p", "pause"), ("space G t", "detach")],
+        _ => &[("space G p", "pause"), ("space G t", "stop")],
     };
     panel_hints(out, hints, used, w, card, dim, faint)?;
     // ── Three columns: variables 45% · stack 25% · output the rest
@@ -624,7 +624,7 @@ fn value_and_type(
 ///
 /// ```text
 ///  FAILED  math::tests::*   ● 2  ▲ 1  ◦ 1   0.4s                 space x l again · space x d debug …
-///  TESTS                          │ FAILURE  src/math.rs:21                          ]t next · [t prev
+///  TESTS                          │ FAILURE  src/math.rs:21                          ]x next · [x prev
 ///  ● adds                         │ assertion `left == right` failed: 7 / 2 rounds down
 /// ▎▲ divides                      │   left: 3
 ///  ◦ slow                         │  right: 4
@@ -808,7 +808,7 @@ fn draw_test_panel(
                     }
                     if fails.len() > 1 {
                         let h = format!(
-                            "]t next · [t prev  {}/{}",
+                            "]x next · [x prev  {}/{}",
                             fails.iter().position(|&f| f == r.selected).unwrap_or(0) + 1,
                             fails.len()
                         );

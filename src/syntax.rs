@@ -30,7 +30,16 @@ pub struct LangSpec {
     path_suffixes: Vec<String>,
     /// Path-suffix patterns — up to one `*` per segment (`templates/*.yaml` = Helm chart templates).
     globs: Vec<String>,
+    /// Line comment token (`//`) · block comment (`/*`, `*/`) — `C-c` toggles them.
+    pub comment_token: Option<String>,
+    pub block_comment: Option<(String, String)>,
+    /// Insert-mode pairs (open, close) — None = the defaults.
+    pub auto_pairs: Option<Vec<(char, char)>>,
 }
+
+/// Insert-mode pairs when the language doesn't say.
+pub const DEFAULT_PAIRS: &[(char, char)] =
+    &[('(', ')'), ('[', ']'), ('{', '}'), ('"', '"'), ('\'', '\''), ('`', '`')];
 
 fn specs() -> &'static [LangSpec] {
     static SPECS: OnceLock<Vec<LangSpec>> = OnceLock::new();
@@ -54,6 +63,19 @@ fn specs() -> &'static [LangSpec] {
                     filenames: strings(l.get("filenames")),
                     path_suffixes: strings(l.get("path-suffixes")),
                     globs: strings(l.get("globs")),
+                    comment_token: l.get("comment-token").and_then(|t| t.as_str()).map(str::to_string),
+                    block_comment: l.get("block-comment-tokens").and_then(|b| {
+                        Some((b.get("start")?.as_str()?.to_string(), b.get("end")?.as_str()?.to_string()))
+                    }),
+                    auto_pairs: l.get("auto-pairs").map(|_| {
+                        strings(l.get("auto-pairs"))
+                            .iter()
+                            .filter_map(|p| {
+                                let mut c = p.chars();
+                                Some((c.next()?, c.next()?))
+                            })
+                            .collect()
+                    }),
                     name,
                 })
             })

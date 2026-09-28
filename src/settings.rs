@@ -191,6 +191,13 @@ pub static SETTINGS: &[Setting] = &[
         set: |c, v| c.cursor_diagnostics = b(v),
     },
     Setting {
+        path: "editor.auto-pairs",
+        kind: Kind::Bool,
+        doc: "Typing ( [ { \" ' ` adds the closer; typing the closer steps over it; backspace removes both",
+        get: |c| Value::from(c.auto_pairs),
+        set: |c, v| c.auto_pairs = b(v),
+    },
+    Setting {
         path: "editor.indent-guides",
         kind: Kind::Bool,
         doc: "Faint vertical guides in leading indentation (theme: ui.virtual.indent-guide)",

@@ -29,6 +29,7 @@ The name is also the `:set` path: `:set editor.scrolloff 8` changes it for this 
 | `editor.restore-session` | bool | `true` | Reopen the files you had open in this folder (with cursor positions) when started without files |
 | `editor.inline-diagnostics` | bool | `true` | Show diagnostic messages at the end of their line and tint error/warning lines |
 | `editor.cursor-diagnostics` | bool | `true` | Cursor on an underlined problem whose message doesn't fit at the line end: show it in full in a card (Esc hides it) |
+| `editor.auto-pairs` | bool | `true` | Typing ( [ { " ' ` adds the closer; typing the closer steps over it; backspace removes both |
 | `editor.indent-guides` | bool | `true` | Faint vertical guides in leading indentation (theme: ui.virtual.indent-guide) |
 | `editor.scrollbar` | bool | `true` | Scrollbar on the right edge, with error/warning marks for the whole file |
 | `editor.lsp` | bool | `true` | Start language servers (servers: [lsp.&lt;name>] command/args, per language: [lang.&lt;lang>] lsp = [...]) |

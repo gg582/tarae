@@ -35,7 +35,7 @@ for `F5` and attach.
 Modified files are saved before a run. **Results** fill a panel where the debug panel sits: a header like
 `FAILED  math::*   ● 1  ▲ 1   26 ms`, each test on the left as `●` passed · `▲` failed · `◦` skipped (shapes, not just
 colors), and the selected failure's message and location on the right. The failing line gets a red `▲ message` at its
-end; `]t` `[t` jump between failures.
+end; `]x` `[x` jump between failures.
 
 Results are read from libtest output, `go test -v`, `pytest -v --tb=short`, and for Java the Gradle/Maven JUnit XML
 reports. While results can't be read yet (still building, a compile error), the full output shows instead.
@@ -53,20 +53,20 @@ the test JVM waiting for a debugger (`--debug-jvm` / `-Dmaven.surefire.debug`) a
 
 DAP for Rust, C, and C++ (lldb-dap — Rust is built with `cargo build` first), Go (dlv), Python (debugpy), and Java
 (java-debug inside jdtls — the current file's `main`, otherwise the project's first; Maven, Gradle, or a folder with no
-build file). Everything lives under `space g`.
+build file). Everything lives under `space G`.
 
 | Key | Does |
 |---|---|
-| `F9` / `space g b` | Toggle breakpoint (a red `●` before the line number) |
-| `F5` / `space g l` | Start, or continue |
-| `F10` / `space g n` | Step over |
-| `F11` / `space g i` | Step in |
-| `F12` / `space g o` | Step out |
-| `space g p` | Pause |
-| `space g t` | Stop (or detach, when attached) |
-| `space g C-c` | Conditional breakpoint — `break when: step == 3` |
-| `space g C-l` | Logpoint — prints `a is {a}` to the output without stopping |
-| `space g w` / `space g W` | Add / remove a watch expression (`:watch expr`, `:unwatch`) |
+| `F9` / `space G b` | Toggle breakpoint (a red `●` before the line number) |
+| `F5` / `space G l` | Start, or continue |
+| `F10` / `space G n` | Step over |
+| `F11` / `space G i` | Step in |
+| `F12` / `space G o` | Step out |
+| `space G p` | Pause |
+| `space G t` | Stop (or detach, when attached) |
+| `space G C-c` | Conditional breakpoint — `break when: step == 3` |
+| `space G C-l` | Logpoint — prints `a is {a}` to the output without stopping |
+| `space G w` / `space G W` | Add / remove a watch expression (`:watch expr`, `:unwatch`) |
 
 When paused, the line gets a `▶` and a band, **the values of the variables used up to that line appear at its end**
 (`a = 2  b = 3`), and the debug panel below shows the state (RUNNING · PAUSED · EXITED), variables with types, the call
@@ -87,7 +87,7 @@ evaluated in the current frame on every pause and listed under WATCH at the top 
 
 ## Attaching to a running program
 
-`space g a` opens a picker of targets, or `:attach name` / `:attach host:port`:
+`space G a` opens a picker of targets, or `:attach name` / `:attach host:port`:
 
 | Language | Start the program with | tarae connects via |
 |---|---|---|
@@ -96,7 +96,7 @@ evaluated in the current frame on every pause and listed under WATCH at the top 
 | Java | `-agentlib:jdwp=transport=dt_socket,server=y,address=*:5005` | JDWP, through java-debug in jdtls |
 | Rust / C | `gdbserver`, `lldb-server gdbserver`, or `debugserver` — or a local process by `pid` | lldb-dap |
 
-In an attached session `space g t` **detaches** and leaves the program running. Give the targets you use often a name in
+In an attached session `space G t` **detaches** and leaves the program running. Give the targets you use often a name in
 your config (a project `.tarae.toml` works well for this):
 
 ```toml

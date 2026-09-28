@@ -1,38 +1,55 @@
 # Language table — name (= query directory queries/<name>/), grammar (= grammars/<grammar>.so, defaults to the name),
 # extensions, exact file names, path suffixes (path-suffixes — narrow common names by path), path patterns (globs — one `*` per segment). Grammars and queries themselves are looked up in the runtime directory (runtime.rs).
 # Names match the directory names of the queries (runtime/queries, taken from Helix).
+# comment-token / block-comment-tokens — what `C-c` toggles (line comments when there's a token, else block).
+# auto-pairs — pairs typed in insert mode, each "oc" (default: () [] {} "" '' ``).
 
 [[language]]
 name = "rust"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
+auto-pairs = ["()", "[]", "{}", "\"\"", "``"]
 extensions = ["rs"]
 
 [[language]]
 name = "python"
+comment-token = "#"
 extensions = ["py", "pyi", "pyw"]
 
 [[language]]
 name = "go"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["go"]
 
 [[language]]
 name = "gomod"
+comment-token = "//"
 filenames = ["go.mod"]
 
 [[language]]
 name = "javascript"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["js", "mjs", "cjs"]
 
 [[language]]
 name = "jsx"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 grammar = "javascript"
 extensions = ["jsx"]
 
 [[language]]
 name = "typescript"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["ts", "mts", "cts"]
 
 [[language]]
 name = "tsx"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["tsx"]
 
 [[language]]
@@ -42,25 +59,30 @@ filenames = ["flake.lock", ".prettierrc", ".babelrc"]
 
 [[language]]
 name = "toml"
+comment-token = "#"
 extensions = ["toml"]
 filenames = ["Cargo.lock", "uv.lock"]
 
 # Helm chart templates — grammar is Go template, text between `{{ }}` is injected as YAML (queries/helm/injections.scm)
 [[language]]
 name = "helm"
+block-comment-tokens = { start = "{{/*", end = "*/}}" }
 grammar = "gotmpl"
 globs = ["templates/*.yaml", "templates/*.yml", "templates/_*.tpl", "templates/NOTES.txt"]
 
 [[language]]
 name = "gotmpl"
+block-comment-tokens = { start = "{{/*", end = "*/}}" }
 extensions = ["gotmpl"]
 
 [[language]]
 name = "yaml"
+comment-token = "#"
 extensions = ["yml", "yaml"]
 
 [[language]]
 name = "markdown"
+block-comment-tokens = { start = "<!--", end = "-->" }
 extensions = ["md", "markdown"]
 
 # Injection only (no extension) — bold·code·links inside markdown paragraphs, TODO·NOTE inside comments
@@ -73,149 +95,203 @@ name = "comment"
 
 [[language]]
 name = "c"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["c", "h"]
 
 [[language]]
 name = "cpp"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["cc", "cpp", "cxx", "hpp", "hh", "hxx", "c++"]
 
 [[language]]
 name = "c-sharp"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["cs"]
 
 [[language]]
 name = "bash"
+comment-token = "#"
 extensions = ["sh", "bash", "zsh"]
 filenames = [".bashrc", ".bash_profile", ".zshrc", ".zprofile", ".profile", "PKGBUILD"]
 
 [[language]]
 name = "fish"
+comment-token = "#"
 extensions = ["fish"]
 
 [[language]]
 name = "nu"
+comment-token = "#"
 extensions = ["nu"]
 
 [[language]]
 name = "lua"
+comment-token = "--"
+block-comment-tokens = { start = "--[[", end = "]]" }
 extensions = ["lua"]
 
 [[language]]
 name = "html"
+block-comment-tokens = { start = "<!--", end = "-->" }
 extensions = ["html", "htm"]
 
 [[language]]
 name = "css"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["css"]
 
 [[language]]
 name = "scss"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["scss"]
 
 [[language]]
 name = "java"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["java"]
 
 [[language]]
 name = "kotlin"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["kt", "kts"]
 
 [[language]]
 name = "swift"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["swift"]
 
 [[language]]
 name = "zig"
+comment-token = "//"
 extensions = ["zig", "zon"]
 
 [[language]]
 name = "nix"
+comment-token = "#"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["nix"]
 
 [[language]]
 name = "dockerfile"
+comment-token = "#"
 extensions = ["dockerfile"]
 filenames = ["Dockerfile", "Containerfile"]
 
 [[language]]
 name = "make"
+comment-token = "#"
 extensions = ["mk"]
 filenames = ["Makefile", "makefile", "GNUmakefile"]
 
 [[language]]
 name = "cmake"
+comment-token = "#"
 extensions = ["cmake"]
 filenames = ["CMakeLists.txt"]
 
 [[language]]
 name = "just"
+comment-token = "#"
 extensions = ["just"]
 filenames = ["justfile", "Justfile", ".justfile"]
 
 [[language]]
 name = "sql"
+comment-token = "--"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["sql"]
 
 [[language]]
 name = "ruby"
+comment-token = "#"
 extensions = ["rb"]
 filenames = ["Gemfile", "Rakefile"]
 
 [[language]]
 name = "php"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["php"]
 
 [[language]]
 name = "elixir"
+comment-token = "#"
 extensions = ["ex", "exs"]
 
 [[language]]
 name = "haskell"
+comment-token = "--"
+block-comment-tokens = { start = "{-", end = "-}" }
+auto-pairs = ["()", "[]", "{}", "\"\"", "``"]
 extensions = ["hs"]
 
 [[language]]
 name = "ocaml"
+block-comment-tokens = { start = "(*", end = "*)" }
+auto-pairs = ["()", "[]", "{}", "\"\"", "``"]
 extensions = ["ml"]
 
 [[language]]
 name = "scala"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["scala", "sc"]
 
 [[language]]
 name = "dart"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["dart"]
 
 [[language]]
 name = "protobuf"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 grammar = "proto"
 extensions = ["proto"]
 
 [[language]]
 name = "graphql"
+comment-token = "#"
 extensions = ["graphql", "gql"]
 
 [[language]]
 name = "hcl"
+comment-token = "#"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["hcl", "tf", "tfvars"]
 
 [[language]]
 name = "kdl"
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
 extensions = ["kdl"]
 
 [[language]]
 name = "xml"
+block-comment-tokens = { start = "<!--", end = "-->" }
 extensions = ["xml", "svg", "plist"]
 
 [[language]]
 name = "svelte"
+block-comment-tokens = { start = "<!--", end = "-->" }
 extensions = ["svelte"]
 
 [[language]]
 name = "vue"
+block-comment-tokens = { start = "<!--", end = "-->" }
 extensions = ["vue"]
 
 [[language]]
 name = "ini"
+comment-token = "#"
 extensions = ["ini", "cfg"]
 
 [[language]]
@@ -224,20 +300,24 @@ extensions = ["diff", "patch"]
 
 [[language]]
 name = "git-commit"
+comment-token = "#"
 grammar = "gitcommit"
 filenames = ["COMMIT_EDITMSG", "MERGE_MSG", "TAG_EDITMSG"]
 
 [[language]]
 name = "git-config"
+comment-token = "#"
 filenames = [".gitconfig", ".gitmodules"]
 
 [[language]]
 name = "git-ignore"
+comment-token = "#"
 grammar = "gitignore"
 filenames = [".gitignore", ".dockerignore", ".ignore"]
 
 [[language]]
 name = "sshclientconfig"
+comment-token = "#"
 path-suffixes = [".ssh/config"]
 
 # ── Grammar sources. Only `core = true` (what's used to hack on tarae itself — rust·toml·markdown·comment) goes into the default build.

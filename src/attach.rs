@@ -1,4 +1,4 @@
-//! Attach a debugger to a running program (remote debugging) — `space g a` · `:attach [name | host:port]`.
+//! Attach a debugger to a running program (remote debugging) — `space G a` · `:attach [name | host:port]`.
 //!
 //! Each language attaches differently:
 //! - **Python** — the debug server of a program launched with `python -m debugpy --listen 5678 app.py`
@@ -10,7 +10,7 @@
 //! - **Rust·C** — remote `gdbserver`·`lldb-server gdbserver :1234 ./app` → lldb-dap via
 //!   `gdb-remote host:port`. With `pid`, a local process (lldb-dap·dlv·debugpy all).
 //!
-//! Config (`~/.config/tarae/config.toml`·`.tarae.toml`) — name targets and pick one in `space g a`:
+//! Config (`~/.config/tarae/config.toml`·`.tarae.toml`) — name targets and pick one in `space G a`:
 //! ```toml
 //! [[attach]]
 //! name = "api (k8s)"
@@ -178,7 +178,7 @@ fn connect(host: &str, port: u16) -> Result<std::net::TcpStream, String> {
 }
 
 impl Editor {
-    /// `space g a` — pick a target to attach to (asks for an address if none are configured;
+    /// `space G a` — pick a target to attach to (asks for an address if none are configured;
     /// targets are layered up to this project's `.tarae.toml`).
     pub fn attach_picker(&mut self) {
         let targets = &self.config.attach;
@@ -231,7 +231,7 @@ impl Editor {
             self.dap.as_ref().map(|d| &d.state),
             Some(State::Running | State::Stopped { .. } | State::Starting)
         ) {
-            return self.note("already debugging — space g t first");
+            return self.note("already debugging — space G t first");
         }
         let doc = self.doc();
         let file = doc.path.clone();

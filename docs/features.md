@@ -42,7 +42,13 @@ configs carry over as they are.
 - Regex selection `s` (select matches inside the selection), `S` (split on matches), `A-s` (split into lines),
   `K`/`A-K` (keep/remove selections that match)
 - Editing `i a I A o O` `d c y p P` `A-d A-c` `r` `~` `` ` `` `` A-` `` `> <` `J` · `u U` — a whole insert session is one
-  undo step, and insert mode keeps your indentation
+  undo step, and insert mode keeps your indentation · `.` repeats the last insert (the command that started it and
+  what you typed, at the current selections; with a count) · `C-c` comments/uncomments the selected lines (block
+  comments where a language has only those)
+- Insert mode keeps Helix's keys: `C-w`/`A-Backspace` delete a word back, `A-d` forward, `C-u`/`C-k` to the line
+  start/end, `C-r x` types register x, `C-s` makes what you've typed an undo step, `C-h` `C-d` `C-j`, `Home`/`End`
+- Auto-pairs `editor.auto-pairs` — `( [ { " ' `` ` `` get their closer (not before a word, and a quote not after one, so
+  `don't` stays one quote; Rust lifetimes don't pair); typing the closer steps over it; backspace in `()` removes both
 - `m` mode — `mm` matching bracket; `mi`/`ma` + `w W p ( [ { < " ' `` ` `` or the tree-sitter objects `f t a c T`
   (function, type, argument, comment, test — repeat to widen one layer at a time); `ms` `mr` `md` surround
 - Registers `"x`, `_` (black hole), and `+` = the system clipboard (`space y`, `space p`, `space P`) · macros: `Q`

@@ -186,6 +186,10 @@ pub struct Editor {
     pub macros: HashMap<char, Vec<Key>>,
     /// Registers of the macros being replayed (a macro may replay another one, never itself).
     pub replaying: Vec<char>,
+    /// `.`: the insert session being recorded · the last finished one · replaying it now (repeat.rs).
+    pub(crate) insert_rec: Option<crate::repeat::LastInsert>,
+    pub(crate) last_insert: Option<crate::repeat::LastInsert>,
+    pub(crate) repeating_insert: bool,
     /// Length of the key sequence behind the last command — to drop `Q` itself when recording stops.
     pub last_trigger_len: usize,
     /// Some while entering a command line.
@@ -369,6 +373,9 @@ impl Editor {
             pending: Vec::new(),
             count: None,
             undo_group: None,
+            insert_rec: None,
+            last_insert: None,
+            repeating_insert: false,
             next_id: 0,
         };
         ed.new_scratch();
@@ -681,6 +688,29 @@ impl Editor {
             let doc = self.doc();
             self.undo_group = Some((doc.id, doc.snapshot()));
         }
+    }
+
+    /// Insert mode `C-s`: what was typed so far becomes its own undo step; typing goes on in a new one.
+    pub fn commit_undo_checkpoint(&mut self) {
+        self.close_undo_group();
+        self.open_undo_group();
+    }
+
+    /// This document's language (by its grammar, else by its path — also when the grammar isn't there).
+    pub fn lang_spec(&self) -> Option<&'static syntax::LangSpec> {
+        let doc = self.doc();
+        doc.syntax
+            .as_ref()
+            .and_then(|s| syntax::spec(&s.lang.name))
+            .or_else(|| doc.path.as_deref().and_then(syntax::detect))
+    }
+
+    /// Insert-mode auto-pairs for this document — empty when turned off.
+    pub fn pairs(&self) -> &'static [(char, char)] {
+        if !self.config.auto_pairs {
+            return &[];
+        }
+        self.lang_spec().and_then(|s| s.auto_pairs.as_deref()).unwrap_or(syntax::DEFAULT_PAIRS)
     }
 
     fn close_undo_group(&mut self) {
@@ -1238,12 +1268,19 @@ impl Editor {
             }
         }
         let was_insert = self.mode == Mode::Insert;
+        self.insert_finished(0); // left insert mode some other way (mouse …)
+        self.insert_key(key);
         self.handle_key_inner(key);
+        self.insert_finished(self.last_trigger_len);
         self.track_doc_switch();
         if self.diag_card_hidden.is_some_and(|h| h != (self.doc().id, self.cursor_line())) {
             self.diag_card_hidden = None;
         }
         let typed = key.plain_char();
+        // Replaying `.` — no completion or signature requests for the replayed keys
+        if self.repeating_insert {
+            return;
+        }
         if was_insert || self.completion.is_some() {
             match key.code {
                 Code::Char(_) if typed.is_some() => self.completion_after_edit(typed),
@@ -1283,6 +1320,7 @@ impl Editor {
         }
         // Keys a replayed macro feeds in aren't recorded — the `q` that replays them already was
         if self.replaying.is_empty()
+            && !self.repeating_insert
             && let Some((_, keys)) = &mut self.recording
         {
             keys.push(key);
@@ -1379,7 +1417,8 @@ impl Editor {
         }
     }
 
-    fn run(&mut self, cmds: &[MappableCommand], count: Option<usize>) {
+    pub(crate) fn run(&mut self, cmds: &[MappableCommand], count: Option<usize>) {
+        let was_insert = self.mode == Mode::Insert;
         self.with_group(|cx| {
             for cmd in cmds {
                 match cmd {
@@ -1403,6 +1442,9 @@ impl Editor {
                 }
             }
         });
+        if !was_insert && self.mode == Mode::Insert {
+            self.insert_started(cmds, count);
+        }
         // `"a` applies only to the very next command.
         self.selected_register = None;
     }
@@ -2394,6 +2436,14 @@ q = \"delete_selection\"\n",
             "<C-o>",
             "<tab>",
             "<C-s>",
+            ".",
+            "<C-c>",
+            "i(\"'<esc>",
+            "A<C-w><esc>",
+            "i<A-d><esc>",
+            "i<C-u><esc>",
+            "a<C-k><esc>",
+            "i(<backspace><esc>",
             "fa",
             "t한",
             "F,",
@@ -2588,6 +2638,83 @@ q = \"delete_selection\"\n",
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    /// `.` repeats the last insert: the command that entered insert mode, then what was typed — at the
+    /// current selections, with a count.
+    #[test]
+    fn dot_repeats_the_last_insert() {
+        assert_eq!(text(&run("a\nb\n", "Ahi<esc>j.")), "ahi\nbhi\n");
+        assert_eq!(
+            text(&run("one\ntwo\n", "ecX<esc>jghe.")),
+            "X\nX\n",
+            "change replays on the new selection"
+        );
+        assert_eq!(text(&run("a\n", "Ax<esc>2.")), "axxx\n");
+        assert_eq!(text(&run("a\n", "Ax<esc>.u")), "ax\n", "one undo step per repeat");
+        assert_eq!(text(&run("a\n", "A x<C-w>y<esc>.")), "a y y\n", "editing keys replay too");
+        assert_eq!(text(&run("a\n", ".")), "a\n", "nothing yet");
+    }
+
+    fn rust_editor(text: &str) -> Editor {
+        let mut ed = editor(text);
+        ed.docs[0].path = Some("/tmp/tarae-test.rs".into());
+        ed
+    }
+
+    #[test]
+    fn auto_pairs_in_insert_mode() {
+        assert_eq!(text(&run("\n", "i(x)<esc>")), "(x)\n", "closer added, then stepped over");
+        assert_eq!(text(&run("\n", "i(<backspace><esc>")), "\n", "backspace removes both");
+        assert_eq!(text(&run("\n", "idon't<esc>")), "don't\n");
+        assert_eq!(text(&run("\n", "i\"a\"<esc>")), "\"a\"\n");
+        assert_eq!(text(&run("x\n", "i(<esc>")), "(x\n", "before a word char: no closer");
+        let mut ed = rust_editor("\n");
+        feed(&mut ed, "i&'a<esc>");
+        assert_eq!(text(&ed), "&'a\n", "Rust lifetimes don't pair");
+        let mut ed = editor("\n");
+        ed.config.auto_pairs = false;
+        feed(&mut ed, "i(<esc>");
+        assert_eq!(text(&ed), "(\n");
+    }
+
+    #[test]
+    fn insert_mode_editing_keys() {
+        assert_eq!(text(&run("foo bar\n", "A<C-w><esc>")), "foo \n");
+        assert_eq!(text(&run("foo bar\n", "A<C-w><C-w><esc>")), "\n");
+        assert_eq!(text(&run("a\nb\n", "jI<C-w><esc>")), "ab\n", "at a line start: the line break");
+        assert_eq!(text(&run("foo.bar\n", "A<A-backspace><esc>")), "foo.\n", "punctuation is its own run");
+        assert_eq!(text(&run("foo bar\n", "i<A-d><esc>")), " bar\n");
+        assert_eq!(text(&run("    foo bar\n", "A<C-u><esc>")), "    \n", "to the indentation first");
+        assert_eq!(text(&run("    foo\n", "A<C-u><C-u><esc>")), "\n");
+        assert_eq!(text(&run("a\nb\n", "jI<C-u><esc>")), "ab\n");
+        assert_eq!(text(&run("foo bar\n", "i<C-k><esc>")), "\n");
+        assert_eq!(text(&run("a\nb\n", "i<C-k><C-k><esc>")), "b\n", "at the line end: joins");
+        assert_eq!(text(&run("abc\n", "yA<C-r>\"<esc>")), "abca\n");
+        assert_eq!(text(&run("\n", "iab<C-s>cd<esc>u")), "ab\n", "C-s = undo step");
+        assert_eq!(text(&run("abc\n", "A<home>X<esc>")), "Xabc\n");
+        assert_eq!(text(&run("abc\n", "i<end>X<esc>")), "abcX\n");
+        assert_eq!(text(&run("ab\n", "A<C-h><C-j>x<esc>")), "a\nx\n");
+    }
+
+    #[test]
+    fn c_c_toggles_line_comments() {
+        let mut ed = rust_editor("fn a() {\n    x();\n}\n");
+        feed(&mut ed, "jgs<C-c>");
+        assert_eq!(text(&ed), "fn a() {\n    // x();\n}\n");
+        assert_eq!(
+            ed.doc().text.byte_slice(ed.doc().selection().primary().from()..).chars().next(),
+            Some('x'),
+            "the cursor stays on its char"
+        );
+        feed(&mut ed, "<C-c>");
+        assert_eq!(text(&ed), "fn a() {\n    x();\n}\n");
+        feed(&mut ed, "%<C-c>");
+        assert_eq!(text(&ed), "// fn a() {\n//     x();\n// }\n");
+        feed(&mut ed, "u");
+        assert_eq!(text(&ed), "fn a() {\n    x();\n}\n", "one undo step");
+        let ed = run("x\n", "<C-c>");
+        assert_eq!(text(&ed), "x\n", "unknown language: nothing");
+    }
+
     /// `C-o` returns from big moves (`ge`, `gg`, search) and `C-i`/Tab goes forward again; a spot
     /// follows edits made after leaving it; `C-s` saves a spot by hand.
     #[test]
@@ -2699,12 +2826,12 @@ q = \"delete_selection\"\n",
         assert_eq!(ed.theme.name, original);
     }
 
-    /// `space g w` with a one-character cursor takes the word — even when that character is multi-byte.
+    /// `space G w` with a one-character cursor takes the word — even when that character is multi-byte.
     #[test]
     fn watch_takes_the_word_under_a_wide_cursor() {
         let prompt = |ed: &Editor| ed.prompt.as_ref().map(|p| p.text.clone());
-        assert_eq!(prompt(&run("값x + 1", " gw")), Some("값x".into()));
-        assert_eq!(prompt(&run("a.b", "% gw")), Some("a.b".into()), "a wider selection is taken as is");
+        assert_eq!(prompt(&run("값x + 1", " Gw")), Some("값x".into()));
+        assert_eq!(prompt(&run("a.b", "% Gw")), Some("a.b".into()), "a wider selection is taken as is");
     }
 
     /// `:w other` — a failed write keeps the old name; writing over an existing file isn't a conflict

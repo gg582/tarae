@@ -1006,6 +1006,7 @@ impl Editor {
             let from = range_start
                 .and_then(|s| lsp::from_position(&doc.text, s, enc))
                 .map_or(c.start, |f| f.min(c.start));
+            let replaced = (head.saturating_sub(from), plain.clone(), cursor);
             let mut changes = vec![crate::transaction::Change { from, to: head, insert: plain }];
             for e in raw["additionalTextEdits"].as_array().into_iter().flatten() {
                 if let (Some(a), Some(b), Some(t)) = (
@@ -1019,6 +1020,9 @@ impl Editor {
             let tx = crate::transaction::Transaction::new(changes);
             let pos = tx.map_pos(from, crate::transaction::Assoc::Before) + cursor;
             doc.apply_with(&tx, Selection::point(pos));
+            // `.` replays this as the text it put in (repeat.rs)
+            let (replace, text, cursor) = replaced;
+            cx.editor.insert_completion(replace, text, cursor);
         });
     }
 

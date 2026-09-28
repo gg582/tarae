@@ -646,7 +646,7 @@ impl Editor {
         }
     }
 
-    /// `]t` · `[t` — go to a failed test's location (first the picked one; if already there, next·prev).
+    /// `]x` · `[x` — go to a failed test's location (first the picked one; if already there, next·prev).
     /// The results pane picks it too.
     pub fn test_failure_step(&mut self, forward: bool) {
         let here = self.doc().path.clone().map(|p| {
@@ -787,7 +787,7 @@ impl Editor {
                 if let Some(cases) = cases {
                     r.cases = cases;
                 }
-                // Pick the first failure (right side of the results pane · ]t)
+                // Pick the first failure (right side of the results pane · ]x)
                 r.selected = r.failures().first().copied().unwrap_or(0);
                 r.state = match status.and_then(|s| s.code()) {
                     Some(0) => RunState::Passed,
