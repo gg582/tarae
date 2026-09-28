@@ -323,3 +323,183 @@ impl Document {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::selection::Range;
+    use crate::transaction::Change;
+
+    fn edit(doc: &mut Document, change: Change) {
+        let before = doc.snapshot();
+        doc.apply(&Transaction::new(vec![change]));
+        doc.commit_undo(before);
+    }
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("tarae-doc-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn undo_redo_walk_snapshots_and_a_new_edit_drops_redo() {
+        let mut doc = Document::from_str(0, "ab");
+        edit(&mut doc, Change::insert(2, "c"));
+        edit(&mut doc, Change::insert(3, "d"));
+        assert_eq!(doc.text.to_string(), "abcd");
+        assert!(doc.undo() && doc.undo());
+        assert_eq!(doc.text.to_string(), "ab");
+        assert!(!doc.undo(), "nothing left to undo");
+        assert!(doc.redo());
+        assert_eq!(doc.text.to_string(), "abc");
+        // A new edit after undo forgets what could be redone
+        edit(&mut doc, Change::insert(0, "x"));
+        assert!(!doc.redo());
+        assert_eq!(doc.text.to_string(), "xabc");
+    }
+
+    #[test]
+    fn a_group_that_changed_nothing_is_not_an_undo_step() {
+        let mut doc = Document::from_str(0, "ab");
+        let before = doc.snapshot();
+        doc.apply(&Transaction::new(vec![]));
+        doc.set_selection(Selection::point(1));
+        doc.commit_undo(before);
+        assert!(!doc.has_history());
+        assert_eq!(doc.selection().primary().head, 1, "an empty transaction still sets the selection");
+    }
+
+    #[test]
+    fn modified_means_differs_from_the_saved_version() {
+        let dir = temp_dir("modified");
+        let mut doc = Document::open(0, &dir.join("a.txt")).unwrap();
+        edit(&mut doc, Change::insert(0, "one"));
+        doc.save().unwrap();
+        assert!(!doc.is_modified());
+        doc.undo();
+        assert!(doc.is_modified(), "undo past the save differs from disk");
+        doc.redo();
+        assert!(!doc.is_modified(), "redo lands exactly on the saved version");
+        // Undo, then a different edit: never mistaken for the saved version, even at the same depth
+        doc.undo();
+        edit(&mut doc, Change::insert(0, "two"));
+        assert!(doc.is_modified());
+        assert_ne!(doc.version(), 0);
+    }
+
+    #[test]
+    fn edits_move_diagnostics_hints_and_selection_and_queue_lsp_changes() {
+        let mut doc = Document::from_str(0, "let x = 1;\n");
+        doc.set_selection(Selection::point(4));
+        doc.lsp.diagnostics.push(crate::lsp::Diagnostic {
+            from: 4,
+            to: 5,
+            severity: 1,
+            message: "unused".into(),
+            raw: serde_json::Value::Null,
+        });
+        doc.lsp.inlay.push(crate::lsp::InlayHint { pos: 5, text: ": i32".into() });
+        // Not attached: nothing is queued for a server
+        edit(&mut doc, Change::insert(0, "  "));
+        assert!(doc.lsp.changes.is_empty());
+        assert_eq!((doc.lsp.diagnostics[0].from, doc.lsp.diagnostics[0].to), (6, 7));
+        assert_eq!(doc.lsp.inlay[0].pos, 7);
+        assert_eq!(doc.selection().primary().head, 6);
+        // Attached: the edit is queued; typing right at a hint pushes it along (it sticks to what follows)
+        doc.lsp.client = Some(1);
+        edit(&mut doc, Change::insert(7, "y"));
+        assert_eq!(doc.lsp.changes.len(), 1);
+        assert_eq!(doc.lsp.inlay[0].pos, 8);
+        // A diagnostic whose whole range is deleted collapses instead of inverting
+        edit(&mut doc, Change::delete(6, 8));
+        assert!(doc.lsp.diagnostics[0].from <= doc.lsp.diagnostics[0].to);
+    }
+
+    #[test]
+    fn undo_resets_server_state_for_a_full_resync() {
+        let mut doc = Document::from_str(0, "a");
+        doc.lsp.client = Some(1);
+        edit(&mut doc, Change::insert(1, "b"));
+        doc.lsp.inlay.push(crate::lsp::InlayHint { pos: 0, text: "h".into() });
+        doc.lsp.inlay_have = Some((doc.version(), (0, 1)));
+        doc.undo();
+        assert!(doc.lsp.full_sync && doc.lsp.changes.is_empty());
+        assert!(doc.lsp.inlay.is_empty() && doc.lsp.inlay_have.is_none());
+    }
+
+    #[test]
+    fn selection_is_clamped_to_the_text() {
+        let mut doc = Document::from_str(0, "abc");
+        doc.set_selection(Selection::single(Range::new(1, 99)));
+        assert_eq!(doc.selection().primary().to(), 3);
+        edit(&mut doc, Change::delete(0, 3));
+        assert_eq!(doc.selection().primary().to(), 0);
+    }
+
+    #[test]
+    fn save_refuses_outside_changes_unless_forced() {
+        let dir = temp_dir("conflict");
+        let path = dir.join("a.txt");
+        std::fs::write(&path, "disk\n").unwrap();
+        let mut doc = Document::open(0, &path).unwrap();
+        edit(&mut doc, Change::insert(0, "mine "));
+        // Someone else writes (a different length, so the stamp differs even with coarse mtimes)
+        std::fs::write(&path, "someone else\n").unwrap();
+        let err = doc.save().unwrap_err().to_string();
+        assert!(err.contains("changed on disk"), "{err}");
+        assert!(doc.disk_conflict && doc.is_modified());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "someone else\n", "their file is untouched");
+        // Still refused while the conflict stands, even if the stamps happened to line up again
+        assert!(doc.save().is_err());
+        doc.save_as(true).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "mine disk\n");
+        assert!(!doc.disk_conflict && !doc.is_modified());
+        doc.save().unwrap();
+    }
+
+    #[test]
+    fn save_needs_a_path_and_a_finished_load() {
+        let mut scratch = Document::from_str(0, "x");
+        assert!(scratch.save().unwrap_err().to_string().contains("no file name"));
+        let dir = temp_dir("loading");
+        let path = dir.join("big.txt");
+        std::fs::write(&path, "content\n").unwrap();
+        let mut doc = Document::placeholder(0, &path);
+        assert!(doc.save().unwrap_err().to_string().contains("loading"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "content\n", "never overwritten with nothing");
+        doc.set_selection(Selection::point(0));
+        doc.finish_loading(Rope::from_str("content\n"));
+        assert!(!doc.loading);
+        doc.save().unwrap();
+    }
+
+    #[test]
+    fn opening_a_missing_file_gives_an_empty_document() {
+        let dir = temp_dir("missing");
+        let doc = Document::open(0, &dir.join("new.txt")).unwrap();
+        assert_eq!(doc.text.len_bytes(), 0);
+        assert!(doc.disk.is_none() && !doc.is_modified());
+        assert_eq!(doc.display_name_short(), "new.txt");
+        assert_eq!(Document::from_str(1, "").display_name(), "[scratch]");
+    }
+
+    #[test]
+    fn installed_history_renumbers_versions_past_the_current_one() {
+        let mut doc = Document::from_str(0, "b");
+        let history = (
+            vec![(Rope::from_str(""), Selection::point(0))],
+            vec![(Rope::from_str("bc"), Selection::point(2))],
+        );
+        doc.install_history(history);
+        let (undo, redo) = doc.history();
+        assert_eq!((undo.len(), redo.len()), (1, 1));
+        assert!(doc.undo());
+        assert_eq!(doc.text.to_string(), "");
+        assert!(doc.is_modified(), "a restored step is not the saved version");
+        assert!(doc.redo() && doc.redo());
+        assert_eq!(doc.text.to_string(), "bc");
+        assert_eq!(doc.selection().primary().head, 2);
+    }
+}
