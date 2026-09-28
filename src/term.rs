@@ -202,6 +202,8 @@ pub fn render(editor: &mut Editor, out: &mut impl Write, w: u16, h: u16) -> io::
         offer_buttons: offer.as_ref().map(|c| c.buttons.clone()).unwrap_or_default(),
         chat_links: Default::default(),
         chat_mini: Default::default(),
+        note_card: Default::default(),
+        thought_card: Default::default(),
     };
     editor.refresh_search(focus_lay.text_rows);
     // During `/` preview the screen follows the match, not the cursor
@@ -1263,15 +1265,24 @@ fn draw(
     if let Some(rev) = editor.review.as_ref().filter(|r| !r.ready) {
         draw_ask_stream(rev, editor, ui, lay, out)?;
     }
+    // Cards over the code share the screen without overlapping: the note at the cursor is placed first,
+    // the minimized chat takes a free corner, the thought card what's left (each skipped if nothing is)
+    let note_rect = text_cursor.and_then(|at| note_card_geom(editor, at, ui, lay)).map(|g| g.rect());
+    let mini_rect = editor
+        .chat
+        .as_ref()
+        .filter(|c| c.compact())
+        .and_then(|c| chat_mini_rect(c, editor, ui, lay, note_rect));
     if let Some(c) = editor.chat.as_ref().filter(|c| c.follow.on && c.busy())
         && editor.review.is_none()
         && lay.edit_w > 0
         && !editor.welcome()
     {
-        draw_thought_card(c, editor, ui, lay, out)?;
+        let taken: Vec<Rect4> = [note_rect, mini_rect].into_iter().flatten().collect();
+        draw_thought_card(c, editor, ui, &taken, out)?;
     }
-    if let Some(c) = editor.chat.as_ref().filter(|c| c.compact()) {
-        draw_chat_mini(c, editor, ui, lay, out)?;
+    if let (Some(c), Some(rect)) = (editor.chat.as_ref(), mini_rect) {
+        draw_chat_mini(c, editor, ui, rect, out)?;
     }
     if let (Some(lines), Some(at)) = (&editor.popup, text_cursor) {
         draw_popup(lines, at, ui, editor, lay, out)?;
@@ -1390,11 +1401,15 @@ fn draw_text(
         }
     }
     // Claude's notes: the line end of each note's first line (ahead of diagnostics — they're rarer and meant)
-    let mut note_at: Vec<Option<&crate::notes::Note>> = vec![None; span];
+    // (the note the card shows — the focused one, else the first — and how many start on that line)
+    let mut note_at: Vec<Option<(&crate::notes::Note, usize)>> = vec![None; span];
     if let Some(p) = doc.path.as_deref() {
         for n in editor.notes.list.iter().filter(|n| n.path == p) {
             if let Some(slot) = n.lines.start.checked_sub(top).and_then(|r| note_at.get_mut(r)) {
-                *slot = Some(n);
+                *slot = Some(match *slot {
+                    None => (n, 1),
+                    Some((m, k)) => (if Some(n.id) == editor.notes.focus { n } else { m }, k + 1),
+                });
             }
         }
     }
@@ -1968,7 +1983,7 @@ fn draw_text(
         }
         // Line-end note: `  ¶ first words +2` — accent glyph, the text a tone lower, replies faint
         let note_here = note_at.get(li).copied().flatten();
-        if let Some(n) = note_here
+        if let Some((n, count)) = note_here
             && last
             && !clipped
         {
@@ -1980,7 +1995,10 @@ fn draw_text(
                     (false, 1) => String::new(),
                     (false, k) => format!("  +{}", k - 1),
                 };
-                let body = fit_ellipsis(n.gist(), room.saturating_sub(2 + tail.width()));
+                // Several on the line: how many, then the one the card shows
+                let gist =
+                    if count > 1 { format!("{count} notes · {}", n.gist()) } else { n.gist().to_string() };
+                let body = fit_ellipsis(&gist, room.saturating_sub(2 + tail.width()));
                 apply(out, line_base)?;
                 queue!(out, Print("   "))?;
                 apply(out, Style { fg: ui.accent.fg, ..line_base })?;
@@ -4369,7 +4387,7 @@ fn draw_thought_card(
     c: &crate::chat::Chat,
     editor: &Editor,
     ui: &Ui,
-    lay: &Layout,
+    taken: &[Rect4],
     out: &mut impl Write,
 ) -> io::Result<()> {
     use crate::chat::Role;
@@ -4379,21 +4397,7 @@ fn draw_thought_card(
         return Ok(());
     };
     let title = usize::from(editor.views.len() > 1);
-    let (px, mut py, pw, mut ph) = (rect.x, rect.y + title, rect.w, rect.h.saturating_sub(title));
-    // Stay clear of the minimized chat (both hug the right edge): the room on the far side of it
-    if let Some((mx, my, _, mh)) = c.compact().then(|| chat_mini_rect(c, editor, ui, lay)).flatten()
-        && px + pw > mx
-        && my < py + ph
-        && my + mh > py
-    {
-        if my > py + ph / 2 {
-            ph = my.saturating_sub(py + 1);
-        } else {
-            let below = my + mh + 1;
-            ph = (py + ph).saturating_sub(below);
-            py = below;
-        }
-    }
+    let (px, py, pw, ph) = (rect.x, rect.y + title, rect.w, rect.h.saturating_sub(title));
     let inner = (pw * 2 / 3).clamp(36, 64).min(pw.saturating_sub(6));
     if inner < 20 {
         return Ok(());
@@ -4412,6 +4416,8 @@ fn draw_thought_card(
                 "read" => "reading",
                 "search" => "searching",
                 "find" => "finding",
+                "note" => "pinning a note",
+                "reply" => "replying on",
                 _ => "using",
             };
             // The target first; the range/folder gets what's left (dropped if that's too little)
@@ -4419,7 +4425,9 @@ fn draw_thought_card(
             let what =
                 if g.look.pattern { fit_ellipsis(&g.look.what, room) } else { fit_left(&g.look.what, room) };
             let left = room.saturating_sub(what.width() + 2);
+            // A note's words are in its own card
             let range = match g.look.range.width() {
+                _ if matches!(g.look.verb, "note" | "reply") => String::new(),
                 0 => String::new(),
                 n if n <= left => format!("  {}", g.look.range),
                 _ if left >= 8 => format!("  {}", fit_left(&g.look.range, left)),
@@ -4469,29 +4477,41 @@ fn draw_thought_card(
     if ph < min_h + 2 {
         return Ok(());
     }
+    let width = inner + 4;
+    let x0 = (px + pw).saturating_sub(width + 1);
+    // Rows other cards hold in this card's columns
+    let blocks: Vec<(usize, usize)> =
+        taken.iter().filter(|r| r.0 < x0 + width && x0 < r.0 + r.2).map(|r| (r.1, r.1 + r.3)).collect();
+    let free =
+        |y: usize, h: usize| y >= py && y + h <= py + ph && blocks.iter().all(|&(a, b)| y + h <= a || y >= b);
     // Where: above the first line read (the context before it — shrinks to the room there) · under the
-    // lines read · the bottom of the pane. Rows are counted from the pane's own top, not the room left.
+    // lines read · the bottom of the pane · its top. Nowhere free → not drawn this frame.
     let top0 = rect.y + title;
     let row_y = |line: usize| rows.iter().position(|r| r.0 == line).map(|r| top0 + r);
     let lines =
         gaze.filter(|g| g.path.is_some() && g.path == editor.doc().path).and_then(|g| g.lines.clone());
-    let (end, bottom) = (py + ph, py + ph - full_h.min(ph));
-    let mut h = full_h;
-    let mut y0 = bottom;
+    let mut placed: Option<(usize, usize)> = None;
     if let Some(l) = lines {
-        let above = row_y(l.start).filter(|&y| y >= py + min_h);
+        if let Some(start) = row_y(l.start) {
+            let ceiling = blocks.iter().filter(|b| b.0 < start).map(|b| b.1).max().unwrap_or(0).max(py);
+            if start >= ceiling + min_h {
+                let h = full_h.min(start - ceiling);
+                placed = Some((start - h, h));
+            }
+        }
         let below = rows.iter().rposition(|r| l.contains(&r.0)).map(|r| top0 + r + 1);
-        if let Some(y) = above {
-            h = full_h.min(y - py);
-            y0 = y - h;
-        } else if let Some(y) = below.filter(|&y| y >= py && y + full_h <= end) {
-            y0 = y;
+        if placed.is_none()
+            && let Some(y) = below.filter(|&y| free(y, full_h))
+        {
+            placed = Some((y, full_h));
         }
     }
+    let bottom = (py + ph).saturating_sub(full_h);
+    let placed = placed.or_else(|| [bottom, py].into_iter().find(|&y| free(y, full_h)).map(|y| (y, full_h)));
+    let Some((y0, h)) = placed else { return Ok(()) };
+    editor.screen.thought_card.set(Some((x0, y0, width, h)));
     // Shrunk: keep the newest rows
     let body = &body[body.len() - (h - 1 - 2 * pad)..];
-    let width = inner + 4;
-    let x0 = (px + pw).saturating_sub(width + 1);
     card_edge(out, ui, card, x0, y0, width, pad, true)?;
     let mut y = y0 + pad;
     for row in std::iter::once(&head[..]).chain(body.iter().map(|r| &r[..])) {
@@ -4696,12 +4716,14 @@ fn draw_chat(
     apply(out, if c.focused { strong } else { dim })?;
     queue!(out, Print("claude"))?;
     // Follow badge: accent while following, faint once the user took over
-    let badge = match (c.follow.on, c.follow.paused) {
+    // (paused lasts until the next question — only worth saying while Claude works)
+    let paused = c.follow.paused && c.busy();
+    let badge = match (c.follow.on, paused) {
         (false, _) => "",
         (true, false) => " › follow",
         (true, true) => " › paused",
     };
-    apply(out, if c.follow.paused { faint } else { accent })?;
+    apply(out, if paused { faint } else { accent })?;
     queue!(out, Print(badge))?;
     let title_w = 6 + badge.width();
     let status: Vec<Span> = match c.state {
@@ -4918,15 +4940,23 @@ fn trail_row(
     row
 }
 
+/// A card's place: (x, y, width, height).
+type Rect4 = (usize, usize, usize, usize);
+
+fn overlaps(a: Rect4, b: Rect4) -> bool {
+    a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3
+}
+
 /// Where the minimized chat sits: the bottom right of the editing area, like a picture-in-picture (the
-/// right edge of code is mostly empty; the thought card takes the room above the lines being read).
-/// (x, y, width, height) — `None` if the screen is too small.
+/// right edge of code is mostly empty; the thought card takes the room above the lines being read) — the
+/// top right if the note card holds that corner, nowhere if it holds both. `None` also on a tiny screen.
 fn chat_mini_rect(
     c: &crate::chat::Chat,
     editor: &Editor,
     ui: &Ui,
     lay: &Layout,
-) -> Option<(usize, usize, usize, usize)> {
+    avoid: Option<Rect4>,
+) -> Option<Rect4> {
     const INNER: usize = 32;
     if lay.edit_w < INNER + 30 || lay.text_rows < 12 {
         return None;
@@ -4938,12 +4968,9 @@ fn chat_mini_rect(
     // title · question · trail · hint
     let h = 1 + 1 + trail + 1 + 2 * pad;
     let width = INNER + 4;
-    Some((
-        lay.edit_w.saturating_sub(width + 1),
-        (lay.text_top as usize + lay.text_rows).saturating_sub(h),
-        width,
-        h,
-    ))
+    let x = lay.edit_w.saturating_sub(width + 1);
+    let (top, bottom) = (lay.text_top as usize, (lay.text_top as usize + lay.text_rows).saturating_sub(h));
+    [bottom, top].into_iter().map(|y| (x, y, width, h)).find(|&r| avoid.is_none_or(|a| !overlaps(r, a)))
 }
 
 /// Trail rows the minimized chat shows (the newest).
@@ -4965,12 +4992,12 @@ fn draw_chat_mini(
     c: &crate::chat::Chat,
     editor: &Editor,
     ui: &Ui,
-    lay: &Layout,
+    rect: Rect4,
     out: &mut impl Write,
 ) -> io::Result<()> {
     use crate::chat::Role;
     use crate::markdown::Span;
-    let Some(rect @ (x0, y0, width, _)) = chat_mini_rect(c, editor, ui, lay) else { return Ok(()) };
+    let (x0, y0, width, _) = rect;
     editor.screen.chat_mini.set(Some(rect));
     let inner = width - 4;
     let t = &editor.theme;
@@ -5260,16 +5287,30 @@ fn draw_popup(
 
 /// Lines in a doc box by the cursor (hover, diagnostic card): at most `cap` rows, scrolled `scroll` rows.
 #[allow(clippy::too_many_arguments)]
-fn draw_float(
+/// Where a floating card goes, with its wrapped rows — placement only (`draw_float` draws).
+struct FloatGeom {
+    x0: usize,
+    y0: usize,
+    inner: usize,
+    h: usize,
+    max_rows: usize,
+    rows: Vec<Vec<crate::markdown::Span>>,
+}
+
+impl FloatGeom {
+    fn rect(&self) -> Rect4 {
+        (self.x0, self.y0, self.inner + 4, self.h)
+    }
+}
+
+fn float_geom(
     lines: &[crate::markdown::Line],
     (cx, cy): (u16, u16),
-    scroll: usize,
     cap: usize,
     ui: &Ui,
     editor: &Editor,
     lay: &Layout,
-    out: &mut impl Write,
-) -> io::Result<Option<(usize, usize, usize, usize)>> {
+) -> Option<FloatGeom> {
     let natural = lines.iter().map(crate::markdown::Line::width).max().unwrap_or(0);
     let inner = natural.clamp(10, 76).min(lay.edit_w.saturating_sub(4));
     let rows = crate::markdown::wrap(lines, inner, dim_style(ui, editor));
@@ -5280,16 +5321,31 @@ fn draw_float(
     let down = want <= below || (want > above && below >= above);
     let room = if down { below } else { above };
     if room < 3 {
-        return Ok(None);
+        return None;
     }
     let max_rows = (room - 2).min(cap);
     let h = rows.len().min(max_rows) + 2;
     let y0 = if down { cy as usize + 1 } else { cy as usize - h };
     let x0 = (cx as usize).saturating_sub(2).min(lay.edit_w.saturating_sub(inner + 4));
+    Some(FloatGeom { x0, y0, inner, h, max_rows, rows })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_float(
+    lines: &[crate::markdown::Line],
+    at: (u16, u16),
+    scroll: usize,
+    cap: usize,
+    ui: &Ui,
+    editor: &Editor,
+    lay: &Layout,
+    out: &mut impl Write,
+) -> io::Result<Option<(usize, usize, usize, usize)>> {
+    let Some(g) = float_geom(lines, at, cap, ui, editor, lay) else { return Ok(None) };
     // Skip as far as scrolled, but stop at the last page (so more C-d doesn't give an empty box)
-    let skip = scroll.min(rows.len().saturating_sub(max_rows));
-    draw_doc_box(&rows[skip..], (x0, y0), inner, max_rows, ui, editor, out)?;
-    Ok(Some((x0, y0, inner + 4, h)))
+    let skip = scroll.min(g.rows.len().saturating_sub(g.max_rows));
+    draw_doc_box(&g.rows[skip..], (g.x0, g.y0), g.inner, g.max_rows, ui, editor, out)?;
+    Ok(Some(g.rect()))
 }
 
 fn dim_style(ui: &Ui, editor: &Editor) -> Style {
@@ -5386,6 +5442,16 @@ fn draw_note_card(
     lay: &Layout,
     out: &mut impl Write,
 ) -> io::Result<bool> {
+    let Some(g) = note_card_geom(editor, at, ui, lay) else { return Ok(false) };
+    editor.screen.note_card.set(Some(g.rect()));
+    // Short on room: the newest part (the latest word and the keys) stays in view
+    let skip = g.rows.len().saturating_sub(g.max_rows);
+    draw_doc_box(&g.rows[skip..], (g.x0, g.y0), g.inner, g.max_rows, ui, editor, out)?;
+    Ok(true)
+}
+
+/// The note card's place and rows, if one shows now (the cursor on a note, nothing else in the way).
+fn note_card_geom(editor: &Editor, at: (u16, u16), ui: &Ui, lay: &Layout) -> Option<FloatGeom> {
     let replying = matches!(editor.prompt.as_ref().map(|p| p.kind), Some(crate::editor::PromptKind::Note(_)));
     let busy = editor.mode == Mode::Insert
         || editor.popup.is_some()
@@ -5394,16 +5460,17 @@ fn draw_note_card(
         || editor.picker.is_some()
         || (editor.prompt.is_some() && !replying)
         || !editor.pending.is_empty();
-    let Some(n) = crate::notes::here(editor).filter(|_| !busy) else { return Ok(false) };
-    let lines = note_lines(n, editor, ui, replying);
-    // Short on room: the newest part (the latest word and the keys) stays in view
-    draw_float(&lines, at, usize::MAX, 18, ui, editor, lay, out).map(|_| true)
+    let n = crate::notes::here(editor).filter(|_| !busy)?;
+    let all = crate::notes::all_here(editor);
+    let of = (all.len() > 1).then(|| (all.iter().position(|m| m.id == n.id).unwrap_or(0) + 1, all.len()));
+    float_geom(&note_lines(n, of, editor, ui, replying), at, 18, ui, editor, lay)
 }
 
 /// A note's thread as card lines — who said it (Claude in accent, you dim), the text with `code` colored,
 /// a waiting row while Claude answers, and the keys.
 fn note_lines(
     n: &crate::notes::Note,
+    of: Option<(usize, usize)>,
     editor: &Editor,
     ui: &Ui,
     replying: bool,
@@ -5417,6 +5484,13 @@ fn note_lines(
     let faint = Style { fg: ui.linenr.fg, ..Style::default() };
     let key = Style { bold: true, ..dim };
     let mut out = Vec::new();
+    // Several notes here: which one this is (]n walks them)
+    if let Some((i, k)) = of {
+        out.push(Line::Text {
+            spans: vec![sp(&format!("note {i} of {k} here · ]n next"), faint)],
+            indent: 0,
+        });
+    }
     // The newest three; older ones fold into a count
     const SHOWN: usize = 3;
     let skip = n.thread.len().saturating_sub(SHOWN);
@@ -6157,6 +6231,47 @@ mod tests {
         }
         assert!(worst.0 < budget, "key {:?} took {:?} (budget {:?})", worst.1, worst.0, budget);
         eprintln!("perf: worst key->frame {:?} on {:?}", worst.0, worst.1);
+    }
+
+    /// Same budget with a thousand notes on the file (every event re-reads their marks; every frame looks
+    /// for the ones on screen and the one under the cursor).
+    #[test]
+    fn perf_budget_with_many_notes() {
+        let budget = frame_budget();
+        let dir = std::env::temp_dir().join(format!("tarae-perf-notes-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("big.rs");
+        let text: String = (0..20_000).map(|i| format!("let x{i} = {i}; // line {i}\n")).collect();
+        std::fs::write(&path, &text).unwrap();
+        let mut ed = Editor::new(Config::default());
+        ed.open(&path).unwrap();
+        let path = ed.doc().path.clone().unwrap();
+        for i in 0..1000 {
+            crate::notes::add(
+                &mut ed,
+                &path,
+                i * 20..i * 20 + 3,
+                crate::notes::By::Claude,
+                "a note about this",
+            );
+        }
+        let mut buf = Vec::with_capacity(1 << 16);
+        render(&mut ed, &mut buf, 120, 40).unwrap();
+        let mut worst = Duration::ZERO;
+        for keys in
+            [&["j"][..], &["j"], &["]", "n"], &["]", "n"], &["o"], &["esc"], &["u"], &["G"], &["[", "n"]]
+        {
+            let t = Instant::now();
+            for k in keys {
+                ed.handle_event(crate::event::Event::Key(k.parse().unwrap()));
+            }
+            buf.clear();
+            render(&mut ed, &mut buf, 120, 40).unwrap();
+            worst = worst.max(t.elapsed());
+        }
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(worst < budget, "worst event→frame {worst:?} with 1000 notes (budget {budget:?})");
+        eprintln!("perf: worst event->frame with 1000 notes {worst:?}");
     }
 
     #[test]

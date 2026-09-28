@@ -99,9 +99,14 @@ line (or the selected lines), which starts a new note with your question.
 | Key | Notes |
 |---|---|
 | `space n` | Reply to the note here, or ask Claude about this line |
-| `]n` / `[n` | Next / previous note, across files |
+| `]n` / `[n` | Next / previous note, across files (notes sharing a line one by one) |
 | `space N` | Every note, with a preview |
 | `:note-close` / `:notes-clear` | Close the note here / all of them |
+
+When several notes share a line, the line end says how many (`¶ 3 notes · …`). The card shows one at a time
+(`note 2 of 3 here`), and `]n` reads them in order. Floating cards never cover each other. The note at the
+cursor is placed first, the minimized chat takes a free corner, and the thought card takes what's left. On a
+small screen, a card with no room waits for the next frame that has room.
 
 Under the hood the chat process gets tarae's own `note` tool: an MCP server that lives inside tarae and speaks
 over the same stream as the conversation, so no server or port is involved.

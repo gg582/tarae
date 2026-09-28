@@ -159,6 +159,9 @@ pub struct Screen {
     pub chat_links: std::cell::RefCell<Vec<(usize, usize, usize, crate::chat::Link)>>,
     /// The minimized chat card (x, y, width, height) — a click on it brings the panel back.
     pub chat_mini: std::cell::Cell<Option<(usize, usize, usize, usize)>>,
+    /// The note card and the thought card this frame (x, y, width, height).
+    pub note_card: std::cell::Cell<Option<(usize, usize, usize, usize)>>,
+    pub thought_card: std::cell::Cell<Option<(usize, usize, usize, usize)>>,
 }
 
 /// One pane of a split: what it shows (a document) + its scroll. Cursor and selection are the document's.
@@ -2593,6 +2596,34 @@ mod tests {
             "{:?}",
             c.msgs.iter().map(|m| &m.text).collect::<Vec<_>>()
         );
+    }
+
+    /// Several notes on one line: the card shows the first, `]n` walks them one by one, then moves on;
+    /// a note just pinned is the one shown.
+    #[test]
+    fn a_crowded_line_is_read_in_order() {
+        let (dir, _, _, lib) = follow_project("crowded");
+        let mut ed = editor("");
+        ed.open(&lib).unwrap();
+        for (line, text) in [(3, "one"), (3, "two"), (3, "three"), (6, "later")] {
+            crate::notes::tool_call(&mut ed, &serde_json::json!({"path": lib, "line": line, "text": text}))
+                .unwrap();
+        }
+        let shown = |ed: &Editor| crate::notes::here(ed).map(|n| n.gist().to_string());
+        ed.goto_line(2);
+        assert_eq!(shown(&ed).as_deref(), Some("one"), "no note stepped to here → the first");
+        ed.notes.focus = Some(3);
+        assert_eq!(shown(&ed).as_deref(), Some("three"), "just pinned → that one");
+        ed.notes.focus = None;
+        feed(&mut ed, "]n");
+        assert_eq!((ed.cursor_line(), shown(&ed).as_deref()), (2, Some("two")));
+        feed(&mut ed, "]n");
+        assert_eq!(shown(&ed).as_deref(), Some("three"));
+        feed(&mut ed, "]n");
+        assert_eq!((ed.cursor_line(), shown(&ed).as_deref()), (5, Some("later")));
+        feed(&mut ed, "[n[n");
+        assert_eq!(shown(&ed).as_deref(), Some("two"));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// If claude can't be reached, a reply or a new note is taken back instead of waiting forever.

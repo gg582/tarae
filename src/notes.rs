@@ -59,6 +59,8 @@ pub struct Notes {
     next: u64,
     /// The note the chat turn in flight is about (its answer lands there if Claude doesn't use the tool).
     pub turn: Option<u64>,
+    /// The note shown when several share a line — the one just pinned, or the one `]n`/`[n` stepped to.
+    pub focus: Option<u64>,
 }
 
 /// The `note` tool as the MCP server lists it.
@@ -103,6 +105,7 @@ pub fn add(ed: &mut Editor, path: &Path, lines: Range<usize>, by: By, text: &str
         thread: vec![Entry { by, text: text.trim().to_string() }],
         waiting: by == By::You,
     });
+    ed.notes.focus = Some(id);
     attach(ed);
     id
 }
@@ -148,11 +151,21 @@ pub fn marks(ed: &Editor) -> Vec<(DocId, u64)> {
     ed.notes.list.iter().filter_map(|n| n.at).collect()
 }
 
-/// The note under the cursor in the current document (the cursor line within its lines).
-pub fn here(ed: &Editor) -> Option<&Note> {
-    let path = ed.doc().path.as_deref()?;
+/// Notes over the cursor line in the current document, in (first line, age) order.
+pub fn all_here(ed: &Editor) -> Vec<&Note> {
+    let Some(path) = ed.doc().path.as_deref() else { return Vec::new() };
     let line = ed.cursor_line();
-    ed.notes.list.iter().rev().find(|n| n.path == path && n.lines.contains(&line))
+    let mut v: Vec<&Note> =
+        ed.notes.list.iter().filter(|n| n.path == path && n.lines.contains(&line)).collect();
+    v.sort_by_key(|n| (n.lines.start, n.id));
+    v
+}
+
+/// The note under the cursor: the focused one (just pinned, or stepped to) if it's here, else the first —
+/// so `]n` reads a crowded line in order.
+pub fn here(ed: &Editor) -> Option<&Note> {
+    let v = all_here(ed);
+    v.iter().find(|n| Some(n.id) == ed.notes.focus).or(v.first()).copied()
 }
 
 // ── The tool ────────────────────────────────────────────────────────────────
@@ -298,20 +311,23 @@ pub fn close_here(ed: &mut Editor) -> Result<(), String> {
     Ok(())
 }
 
-/// `]n`/`[n` — the next/previous note in (file, line) order across every file, wrapping around.
+/// `]n`/`[n` — the next/previous note in (file, line, age) order across every file, wrapping around; notes
+/// sharing a line are visited one by one (the card shows the one stepped to).
 pub fn step(ed: &mut Editor, forward: bool) {
-    let here = (ed.doc().path.clone().unwrap_or_default(), ed.cursor_line());
-    let mut all: Vec<(PathBuf, usize)> =
-        ed.notes.list.iter().map(|n| (n.path.clone(), n.lines.start)).collect();
+    let key = |n: &Note| (n.path.clone(), n.lines.start, n.id);
+    let path = ed.doc().path.clone().unwrap_or_default();
+    // From the note shown here, else from the cursor line
+    let here = here(ed).map(key).unwrap_or((path, ed.cursor_line(), 0));
+    let mut all: Vec<(PathBuf, usize, u64)> = ed.notes.list.iter().map(key).collect();
     all.sort();
-    all.dedup();
     let target = if forward {
         all.iter().find(|t| **t > here).or(all.first())
     } else {
         all.iter().rev().find(|t| **t < here).or(all.last())
     };
     match target.cloned() {
-        Some((p, l)) => {
+        Some((p, l, id)) => {
+            ed.notes.focus = Some(id);
             if let Err(e) = ed.open_at(&p, l, 0) {
                 ed.set_error(format!("{e:#}"));
             }

@@ -733,6 +733,67 @@ fn chat_minimizes_while_following() {
     assert_eq!(s.ed.screen.chat_x, docked, "not following = docked");
 }
 
+/// Crowded screens: with Claude at work in follow mode and a note under the cursor, the note card, the
+/// minimized chat and the thought card never overlap — at any size (a card with no room is skipped).
+#[test]
+fn floating_cards_never_overlap() {
+    use crate::chat::{Look, Msg, Role};
+    for (w, h) in [(112, 30), (100, 30), (80, 24), (72, 20), (140, 45)] {
+        let mut s = Shot::new(w, h);
+        let text: String =
+            (1..=80).map(|i| format!("let line_{i} = {i}; // some code on line {i}\n")).collect();
+        s.file("src/demo.rs", &text);
+        s.ed.config.llm.command = "sh".into();
+        s.ed.config.llm.args = vec!["-c".into(), "cat > /dev/null".into()];
+        s.keys(" lwhy?<ret>");
+        let path = s.ed.doc().path.clone().unwrap();
+        let long = "A longer note that wraps over a few rows so the card is tall — the kind Claude writes when \
+                    something needs explaining; it goes on for a while to fill the card.";
+        for _ in 0..3 {
+            crate::notes::add(&mut s.ed, &path, 39..40, crate::notes::By::Claude, long);
+        }
+        s.ed.goto_line(39);
+        let c = s.ed.chat.as_mut().unwrap();
+        c.msgs.push(Msg {
+            role: Role::Thought,
+            text: "Thinking hard about it for a while.\n".repeat(6),
+            chip: String::new(),
+            look: None,
+            cache: Default::default(),
+        });
+        let look = Look {
+            verb: "read",
+            what: "src/demo.rs".into(),
+            pattern: false,
+            range: "L40–60".into(),
+            link: None,
+        };
+        c.msgs.push(Msg {
+            role: Role::Tool,
+            text: String::new(),
+            chip: String::new(),
+            look: Some(look.clone()),
+            cache: Default::default(),
+        });
+        c.follow.gaze = Some(crate::follow::Gaze { look, path: Some(path.clone()), lines: Some(39..60) });
+        s.frame();
+        let cards: Vec<_> = [&s.ed.screen.note_card, &s.ed.screen.chat_mini, &s.ed.screen.thought_card]
+            .iter()
+            .filter_map(|c| c.get())
+            .collect();
+        assert!(s.ed.screen.note_card.get().is_some(), "{w}x{h}: the note card shows");
+        if h >= 30 {
+            assert_eq!(cards.len(), 3, "{w}x{h}: all three fit");
+        }
+        for (i, a) in cards.iter().enumerate() {
+            for b in &cards[i + 1..] {
+                let hit = a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3;
+                assert!(!hit, "{w}x{h}: {a:?} overlaps {b:?}");
+            }
+        }
+    }
+}
+
 /// Completion card with the selected item's docs — the list comes from a fake server (`cat`), the
 /// response is injected with `on_lsp_message`.
 #[test]
