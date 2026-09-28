@@ -1,3 +1,3 @@
-# 개발용 작업: `cargo xtask <작업>` (xtask/ — tarae 바이너리와 별개)
+# Dev tasks: `cargo xtask <task>` (xtask/ — separate from the tarae binary)
 [alias]
 xtask = "run --quiet --package xtask --"

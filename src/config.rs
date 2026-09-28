@@ -322,8 +322,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn example_config_loads_cleanly() {
-        let (c, w) = parse(include_str!("../examples/config.toml"));
+    fn readme_config_example_loads_cleanly() {
+        // The first ```toml block under README's "## Configuration" — keeps the documented example valid.
+        let readme = include_str!("../README.md");
+        let section = &readme[readme.find("## Configuration").unwrap()..];
+        let block = &section[section.find("```toml\n").unwrap() + 8..];
+        let (c, w) = parse(&block[..block.find("\n```").unwrap()]);
         assert!(w.is_empty(), "{w:?}");
         assert!(c.editor.color_modes);
         assert_eq!(c.editor.line_number, LineNumber::Relative);
