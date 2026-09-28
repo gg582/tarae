@@ -18,7 +18,7 @@
 15   5 }
 16   4
 17   3 impl Point {
-18   2     ▎ Distance to other, _squared_ — cheap to compare.
+18   2     ▎ Distance to other, squared — cheap to compare.
 19   1     pub fn dist2(self, other: Point) -> i32 {
 20  22     │   let (dx, dy) = (self.x - other.x, self.y - other.y);
 21   1     │   dx * dx + dy * dy

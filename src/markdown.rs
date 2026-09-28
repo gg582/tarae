@@ -163,6 +163,8 @@ fn inline(text: &str, base: Style, theme: &Theme) -> Vec<Span> {
     let code = theme.try_get("markup.raw.inline").or_else(|| theme.try_get("markup.raw")).unwrap_or_default();
     let link = theme.try_get("markup.link.text").unwrap_or(Style { underline: true, ..Style::default() });
     let (mut strong, mut emph) = (false, false);
+    // `_`/`__` pairs, tracked apart from `*` so one never closes the other
+    let (mut ustrong, mut uemph) = (false, false);
     let mut spans: Vec<Span> = Vec::new();
     let mut push = |s: &str, style: Style| match spans.last_mut() {
         Some(last) if last.style == style => last.text.push_str(s),
@@ -171,7 +173,7 @@ fn inline(text: &str, base: Style, theme: &Theme) -> Vec<Span> {
     let chars: Vec<char> = text.chars().collect();
     let mut i = 0;
     while i < chars.len() {
-        let style = base.patch(Style { bold: strong, italic: emph, ..Style::default() });
+        let style = base.patch(Style { bold: strong || ustrong, italic: emph || uemph, ..Style::default() });
         let c = chars[i];
         match c {
             '\\' if chars.get(i + 1).is_some_and(char::is_ascii_punctuation) => {
@@ -211,6 +213,35 @@ fn inline(text: &str, base: Style, theme: &Theme) -> Vec<Span> {
                     push("*", style);
                 }
                 i += 1;
+            }
+            // `_emphasis_`·`__strong__` only at word edges — `snake_case`·`x_1_y` stay as-is
+            '_' => {
+                let n = if chars.get(i + 1) == Some(&'_') { 2 } else { 1 };
+                let open = if n == 2 { ustrong } else { uemph };
+                let word =
+                    |j: Option<usize>| j.and_then(|j| chars.get(j)).is_some_and(|c| c.is_alphanumeric());
+                let space = |j: Option<usize>| j.and_then(|j| chars.get(j)).is_none_or(|c| c.is_whitespace());
+                // A closer: not after a space, not followed by a word character
+                let closer = |at: usize| !space(at.checked_sub(1)) && !word(Some(at + n));
+                let opens = !open
+                    && !word(i.checked_sub(1))
+                    && !space(Some(i + n))
+                    && chars.get(i + n) != Some(&'_')
+                    && (i + n + 1..chars.len()).any(|j| {
+                        chars[j..].iter().take_while(|&&c| c == '_').count() == n
+                            && chars[j - 1] != '_'
+                            && closer(j)
+                    });
+                if opens || (open && closer(i)) {
+                    if n == 2 {
+                        ustrong = !ustrong;
+                    } else {
+                        uemph = !uemph;
+                    }
+                } else {
+                    push(&"_".repeat(n), style);
+                }
+                i += n;
             }
             '[' => {
                 // [text](url) → text only (styled as a link). rustdoc reference links [`Hash`]·[Eq][ref] too
@@ -405,6 +436,27 @@ mod tests {
             let Line::Code(spans) = &lines[0] else { panic!() };
             assert!(spans.iter().any(|s| s.text == "fn" && s.style == t.get("keyword")));
         }
+    }
+
+    #[test]
+    fn underscore_emphasis_only_at_word_edges() {
+        let t = Theme::builtin();
+        let spans = |s: &str| inline_spans(s, &t);
+        let text = |s: &str| spans(s).iter().map(|sp| sp.text.clone()).collect::<String>();
+        let italic = |s: &str, word: &str| spans(s).iter().any(|sp| sp.text == word && sp.style.italic);
+        let bold = |s: &str, word: &str| spans(s).iter().any(|sp| sp.text == word && sp.style.bold);
+        assert!(italic("the _squared_ value", "squared"));
+        assert_eq!(text("the _squared_ value"), "the squared value");
+        assert!(bold("a __strong__ one", "strong"));
+        assert!(italic("(_x_),", "x"), "punctuation around is a word edge");
+        // Inside words, alone, or unclosed: literal
+        for s in ["snake_case", "x_1_y", "a _ b", "_unclosed", "trailing_", "__", "a__b__c"] {
+            assert_eq!(text(s), s);
+            assert!(spans(s).iter().all(|sp| !sp.style.italic && !sp.style.bold), "{s}");
+        }
+        // `_` never closes `*` and vice versa
+        assert_eq!(text("*a_b* _c*d_"), "a_b c*d");
+        assert!(italic("*a_b*", "a_b"));
     }
 
     #[test]
