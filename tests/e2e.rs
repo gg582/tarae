@@ -199,9 +199,10 @@ impl Term {
     fn spawn(sb: &Sandbox, args: &[&str], cols: u16, rows: u16) -> Term {
         let (mut master, mut slave) = (-1, -1);
         let mut ws = libc::winsize { ws_row: rows, ws_col: cols, ws_xpixel: 0, ws_ypixel: 0 };
-        // SAFETY: out-pointers to live locals; no name buffer, default termios.
+        // SAFETY: out-pointers to live locals; no name buffer, default termios. The size is a raw pointer
+        // because libc declares it `*mut` on macOS and `*const` on Linux.
         cvt(unsafe {
-            libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null_mut(), &mut ws)
+            libc::openpty(&mut master, &mut slave, std::ptr::null_mut(), std::ptr::null_mut(), &raw mut ws)
         })
         .expect("openpty");
         // SAFETY: openpty just returned these fds and nothing else owns them.

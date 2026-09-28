@@ -9,7 +9,8 @@ You need Rust 1.90+ and a C compiler (grammars are compiled from C).
 
 ```sh
 cargo run -- path/to/file                # try it
-cargo test                               # key-sequence tests + performance budgets
+cargo test                               # unit + key-sequence + screen snapshot + e2e tests, performance budgets
+cargo test --test e2e                    # just the end-to-end tests (the real binary in a pseudo-terminal)
 cargo test --features bundled-grammars   # also exercises the bundled-grammar path
 cargo clippy --all-targets               # must stay at 0 warnings
 cargo fmt                                # rustfmt.toml: max_width = 110
@@ -17,7 +18,11 @@ cargo fmt                                # rustfmt.toml: max_width = 110
 
 Before sending a change, all of `cargo fmt`, `cargo clippy --all-targets`, and `cargo test` must be clean. The test
 suite includes performance budgets (a key → frame on a 200k-line file must stay under 16 ms), so a slow change fails
-a test, not just a benchmark.
+a test, not just a benchmark. On a slow shared machine, `TARAE_PERF_SLACK=3` multiplies the budget (CI does this).
+
+[CI](.github/workflows/ci.yml) runs the same checks on every pull request — fmt, clippy (warnings are errors), and
+tests on Linux and macOS, with and without bundled grammars — plus a build on the minimum Rust version from
+`Cargo.toml`. A weekly run also downloads and builds a grammar from GitHub (`cargo test -- --ignored`).
 
 Code comments are in English.
 
@@ -117,6 +122,21 @@ process, or the disk.
   memory, so your real clipboard is never touched.
 - Tests that need a grammar the default build doesn't include **skip silently** when it's missing (see
   `highlights_rust_when_grammar_available`); run `cargo test --features bundled-grammars` to cover them.
+- **Screen snapshots** (`src/term_snapshots.rs`) render a frame with `term::render`, no terminal needed, and compare it
+  with a golden file in `src/snapshots/`: the text grid plus two compact layers marking backgrounds and text colors by
+  theme key (the format is described at the top of the file). A change to what's on screen shows up as a readable diff.
+  When the change is intended, look at the new output, then regenerate and commit it:
+
+  ```sh
+  TARAE_BLESS=1 cargo test snapshot_
+  ```
+
+  Keep snapshots deterministic — no clock-dependent content, absolute paths, or grammars outside the built-in ones.
+- **End-to-end tests** (`tests/e2e.rs`) start the real `tarae` binary in a pseudo-terminal, type keys, read the screen
+  through a terminal emulator (`vt100`), and check files on disk — startup, save, quit and terminal restore, resize,
+  config errors, graphemes. Each test runs in its own sandbox (`HOME`, XDG dirs, and the Claude Code lock directory all
+  point into a temp dir). Never sleep: send a key, then `wait_for` its visible effect; on timeout the test prints the
+  whole screen.
 
 ## Design and UI
 

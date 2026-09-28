@@ -102,6 +102,7 @@ src/
   main.rs            entry point, `tarae grammar` subcommand
   editor.rs          editor state, key dispatch, key-sequence tests
   term.rs            rendering and the event loop — the only module that knows about the terminal
+  term_snapshots.rs  screen snapshot tests (golden files in snapshots/)
   event.rs           event queue + Jobs (slow work on threads, results back on the main loop)
 
   selection.rs       selection model (byte ranges)
@@ -158,6 +159,8 @@ src/
 runtime/
   queries/           tree-sitter queries (from Helix 25.07.1, MPL-2.0)
   grammars.tar.gz    C sources of the bundled grammars
+tests/
+  e2e.rs             end-to-end tests — the real binary in a pseudo-terminal
 docs/
   reference/         generated from the code — settings.md, keymap.md
 scripts/
