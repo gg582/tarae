@@ -16,6 +16,7 @@ mod document;
 mod editdiff;
 mod editor;
 mod event;
+mod filetree;
 mod git;
 mod gitmenu;
 mod grammar;

@@ -2678,6 +2678,7 @@ fn draw_picker(
             },
             _ => String::new(),
         },
+        Some(Action::Dir(rel)) => format!("{rel}/"),
         Some(Action::ChangedFile(n)) => match editor.changed_files.get(*n) {
             Some(c) => format!(
                 "{}  {}",
@@ -2903,6 +2904,10 @@ fn preview_lines<'a>(
             let d = editor.docs.iter().find(|d| d.id == *id)?;
             let cur = mv::line_of(&d.text, d.selection().primary().head);
             (&d.text, d.syntax.as_ref(), Some(cur))
+        }
+        Action::Dir(_) => {
+            let n = p.current().map_or("", |i| i.hint.as_str());
+            return Some(PreviewView::Note(format!("folder · {n} files — Enter or → opens it, ← folds it")));
         }
         Action::ChangedFile(n) => {
             let c = editor.changed_files.get(*n)?;

@@ -35,6 +35,8 @@ pub enum Action {
     },
     /// File `n` of the pending replace-across-files plan (replace.rs).
     ReplaceFile(usize),
+    /// A folder of the file picker's tree (relative to its root) — Enter / → opens it.
+    Dir(String),
     /// File `n` of the changed-files list (`space g f` — its diff is the preview).
     ChangedFile(usize),
     /// Line `line` (from 0) of the file, byte `col` within that line.
@@ -61,6 +63,15 @@ pub struct Item {
 /// One visible line: (label, matched char positions, selected?, annotation, kind glyph).
 pub type Row = (String, Vec<u32>, bool, String, Option<(&'static str, &'static str)>);
 
+/// The file picker's tree mode: files under `root` · the tree once they're listed · the flat list (for
+/// typing) · a file to show opened up to once the list arrives.
+struct TreeMode {
+    root: PathBuf,
+    tree: Option<crate::filetree::Tree>,
+    flat: Vec<Item>,
+    reveal: Option<String>,
+}
+
 pub struct Picker {
     /// Number assigned by the editor — so a late list doesn't land in a different (newer) picker.
     pub id: u64,
@@ -85,6 +96,10 @@ pub struct Picker {
     pub grep: Option<String>,
     /// Preview scrolled this many lines from where it opens (back to 0 when the selection changes).
     pub preview_scroll: usize,
+    /// File picker: a folder tree while nothing is typed (filetree.rs).
+    tree: Option<TreeMode>,
+    /// Put the selection mid-list on the next draw (the tree opening on the file being edited).
+    center: bool,
     /// Preview cache (path → loading/content). Filled by a worker thread.
     pub previews: HashMap<PathBuf, Preview>,
     matcher: Matcher,
@@ -108,6 +123,8 @@ impl Picker {
             preview: true,
             grep: None,
             preview_scroll: 0,
+            tree: None,
+            center: false,
             previews: HashMap::new(),
             matcher: Matcher::new(config),
         };
@@ -121,9 +138,101 @@ impl Picker {
     }
 
     pub fn set_items(&mut self, items: Vec<Item>) {
-        self.items = items;
         self.loading = false;
+        if let Some(tm) = self.tree.as_mut() {
+            let mut tree = crate::filetree::Tree::new(&tm.root, &items);
+            let reveal = tm.reveal.take();
+            if let Some(r) = &reveal {
+                tree.reveal(r);
+            }
+            tm.tree = Some(tree);
+            tm.flat = items;
+            self.sync_tree();
+            // Start on the file being edited
+            if let Some(r) = reveal {
+                let path = self.tree.as_ref().map(|t| t.root.join(&r));
+                self.select_where(|a| matches!(a, Action::Open(p) if Some(p) == path.as_ref()));
+                self.center = true;
+            }
+            return;
+        }
+        self.items = items;
         self.refilter();
+    }
+
+    /// Show files under `root` as a folder tree while the query is empty, opened up to `reveal` (relative).
+    pub fn with_tree(mut self, root: PathBuf, reveal: Option<String>) -> Self {
+        self.tree = Some(TreeMode { root, tree: None, flat: Vec::new(), reveal });
+        self
+    }
+
+    /// Tree rows while nothing is typed, the flat list once something is.
+    fn sync_tree(&mut self) {
+        let Some(tm) = self.tree.as_ref() else { return self.refilter() };
+        self.items = match (&tm.tree, self.query.is_empty()) {
+            (Some(t), true) => t.rows(),
+            _ => tm.flat.clone(),
+        };
+        self.refilter();
+    }
+
+    /// Showing the tree (file picker, nothing typed).
+    pub fn in_tree(&self) -> bool {
+        self.query.is_empty() && self.tree.as_ref().is_some_and(|t| t.tree.is_some())
+    }
+
+    fn select_where(&mut self, f: impl Fn(&Action) -> bool) {
+        if let Some(k) = self.matches.iter().position(|&i| f(&self.items[i as usize].action)) {
+            self.selected = k;
+        }
+    }
+
+    fn with_tree_mut(&mut self, f: impl FnOnce(&mut crate::filetree::Tree)) {
+        if let Some(t) = self.tree.as_mut().and_then(|t| t.tree.as_mut()) {
+            f(t);
+        }
+    }
+
+    /// The selected row's folder (a folder row) / relative path (a file row).
+    fn current_rel(&self) -> Option<(String, bool)> {
+        let root = &self.tree.as_ref()?.root;
+        match &self.current()?.action {
+            Action::Dir(rel) => Some((rel.clone(), true)),
+            Action::Open(p) => Some((p.strip_prefix(root).ok()?.to_string_lossy().replace('\\', "/"), false)),
+            _ => None,
+        }
+    }
+
+    fn is_open(&self, rel: &str) -> bool {
+        self.tree.as_ref().and_then(|t| t.tree.as_ref()).is_some_and(|t| t.expanded.contains(rel))
+    }
+
+    /// Enter on a folder: open / fold it, staying on it.
+    pub fn tree_toggle(&mut self) {
+        let Some((rel, true)) = self.current_rel() else { return };
+        self.with_tree_mut(|t| t.toggle(&rel));
+        self.sync_tree();
+        self.select_where(|a| matches!(a, Action::Dir(d) if *d == rel));
+    }
+
+    /// → : open a folded folder; on an open one, step to its first entry.
+    pub fn tree_right(&mut self) {
+        match self.current_rel() {
+            Some((rel, true)) if !self.is_open(&rel) => self.tree_toggle(),
+            Some((_, true)) => self.move_by(1),
+            _ => {}
+        }
+    }
+
+    /// ← : fold an open folder; otherwise go to the folder it's in.
+    pub fn tree_left(&mut self) {
+        let Some((rel, dir)) = self.current_rel() else { return };
+        if dir && self.is_open(&rel) {
+            return self.tree_toggle();
+        }
+        if let Some(up) = crate::filetree::parent(&rel).map(str::to_string) {
+            self.select_where(|a| matches!(a, Action::Dir(d) if *d == up));
+        }
     }
 
     pub fn refilter(&mut self) {
@@ -147,12 +256,12 @@ impl Picker {
     pub fn push(&mut self, c: char) {
         self.query.push(c);
         self.selected = 0;
-        self.refilter();
+        self.sync_tree();
     }
 
     pub fn pop(&mut self) {
         self.query.pop();
-        self.refilter();
+        self.sync_tree();
     }
 
     pub fn move_by(&mut self, delta: isize) {
@@ -183,11 +292,16 @@ impl Picker {
 
     /// Visible lines: (label, matched char positions, selected?, annotation). Scrolls so the selection shows.
     pub fn visible(&mut self, rows: usize) -> Vec<Row> {
+        if std::mem::take(&mut self.center) {
+            self.scroll = self.selected.saturating_sub(rows / 2);
+        }
         if self.selected < self.scroll {
             self.scroll = self.selected;
         } else if self.selected >= self.scroll + rows {
             self.scroll = self.selected + 1 - rows;
         }
+        // Never leave rows empty at the bottom while there are rows above (after a list shrinks)
+        self.scroll = self.scroll.min(self.matches.len().saturating_sub(rows));
         let pat = Pattern::parse(&self.query, CaseMatching::Smart, Normalization::Smart);
         let mut buf = Vec::new();
         let (scroll, selected) = (self.scroll, self.selected);
@@ -225,6 +339,7 @@ impl Action {
             Action::Buffer(_)
             | Action::Jump { .. }
             | Action::ReplaceFile(_)
+            | Action::Dir(_)
             | Action::ChangedFile(_)
             | Action::Code(_)
             | Action::Command(_)

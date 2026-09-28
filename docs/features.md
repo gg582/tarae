@@ -110,7 +110,8 @@ configs carry over as they are.
 ## Getting around
 
 - **Pickers** (nucleo fuzzy matching, the same matcher as Helix) — `space f` files (`git ls-files` in a repository, so
-  `.gitignore` is respected), `space b` buffers, `space /` global search (ripgrep when `rg` is installed, a built-in
+  `.gitignore` is respected; with nothing typed they show as a folder tree opened up to the file you're editing —
+  Enter or `→` opens a folder, `←` folds it or goes up; typing switches to the flat fuzzy list), `space b` buffers, `space /` global search (ripgrep when `rg` is installed, a built-in
   regex search otherwise). Lists fill in on a worker thread. `C-n`/`C-p` or arrows, `Tab`, `Enter`, `Esc`. On terminals
   at least 100 columns wide, a syntax-highlighted preview sits on the right ([screenshot](screenshots/m2-file-picker.png)). The wheel over the preview scrolls it, as do `C-f`/`C-b`. `space '` reopens the last one as you
   left it

@@ -1592,10 +1592,17 @@ fn diagnostics_picker(cx: &mut Context) {
 fn file_picker(cx: &mut Context) {
     let root = std::env::current_dir().unwrap_or_default();
     let title = format!("files in {}", root.file_name().map(|n| n.to_string_lossy()).unwrap_or_default());
-    cx.editor.open_picker(
-        crate::picker::Picker::new(title, Vec::new(), true),
-        Some(Box::new(move || Ok(crate::picker::file_items(&root)))),
-    );
+    // Nothing typed: a folder tree opened up to the file being edited
+    let real_root = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone()); // buffers hold real paths
+    let reveal = cx
+        .editor
+        .doc()
+        .path
+        .as_deref()
+        .and_then(|p| p.strip_prefix(&real_root).ok())
+        .map(|r| r.to_string_lossy().replace('\\', "/"));
+    let picker = crate::picker::Picker::new(title, Vec::new(), true).with_tree(root.clone(), reveal);
+    cx.editor.open_picker(picker, Some(Box::new(move || Ok(crate::picker::file_items(&root)))));
 }
 
 /// `:` commands to list in the palette (description, command line).

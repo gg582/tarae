@@ -1046,6 +1046,12 @@ impl Editor {
                 }
                 return;
             }
+            // File tree: Enter on a folder opens/folds it, → opens, ← folds or goes up
+            (Code::Enter, _) if p.current().is_some_and(|i| matches!(i.action, Action::Dir(_))) => {
+                return p.tree_toggle();
+            }
+            (Code::Right, _) if p.in_tree() => return p.tree_right(),
+            (Code::Left, _) if p.in_tree() => return p.tree_left(),
             // Global search results: replace what's listed
             (Code::Char('r'), true) if p.grep.is_some() => return self.replace_ask(),
             // Replace preview: Enter applies to every file still listed
@@ -1130,6 +1136,7 @@ impl Editor {
                 self.replace_apply(&[n]);
                 Ok(())
             }
+            Action::Dir(_) => Ok(()), // folders open in the picker (picker_key)
             // Open it at its first change
             Action::ChangedFile(n) => match self.changed_files.get(n).cloned() {
                 Some(c) => {
@@ -3087,6 +3094,42 @@ q = \"delete_selection\"\n",
         let mut fresh = editor("x\n");
         feed(&mut fresh, " '");
         assert!(fresh.picker.is_none());
+    }
+
+    /// The file picker's tree: it starts on the file being edited (its folders open); ← goes to the folder,
+    /// Enter folds it, → opens it again; typing switches to the flat fuzzy list, emptying the query back.
+    #[test]
+    fn file_picker_tree() {
+        let root = PathBuf::from("/r");
+        let item = |r: &str| crate::picker::Item {
+            label: r.into(),
+            action: Action::Open(root.join(r)),
+            hint: String::new(),
+            glyph: None,
+        };
+        let mut ed = editor("");
+        let picker =
+            Picker::new("files", Vec::new(), true).with_tree(root.clone(), Some("src/main.rs".into()));
+        ed.open_picker(picker, None);
+        ed.picker.as_mut().unwrap().set_items(vec![
+            item("README.md"),
+            item("src/main.rs"),
+            item("src/lib.rs"),
+        ]);
+        let cur = |ed: &Editor| ed.picker.as_ref().and_then(|p| p.current()).map(|i| i.label.clone());
+        let n = |ed: &Editor| ed.picker.as_ref().unwrap().counts().0;
+        assert_eq!(cur(&ed).as_deref(), Some("  main.rs"), "on the file being edited");
+        assert_eq!(n(&ed), 4, "src/ open: src/, lib.rs, main.rs, README.md");
+        feed(&mut ed, "<left>");
+        assert_eq!(cur(&ed).as_deref(), Some("src/"));
+        feed(&mut ed, "<ret>");
+        assert_eq!((cur(&ed).as_deref(), n(&ed)), (Some("src/"), 2), "folded, still on it");
+        feed(&mut ed, "<right>");
+        assert_eq!(n(&ed), 4);
+        feed(&mut ed, "lib");
+        assert_eq!(cur(&ed).as_deref(), Some("src/lib.rs"), "typing: the flat list");
+        feed(&mut ed, "<backspace><backspace><backspace>");
+        assert_eq!(n(&ed), 4, "the tree again");
     }
 
     /// Switching files is a jump too (`C-o` returns to the previous file at its spot); `ga` toggles
