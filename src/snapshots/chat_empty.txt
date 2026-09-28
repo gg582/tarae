@@ -1,7 +1,7 @@
 # chat_empty · 100x30 · theme meok · cursor 26:65
 ## text
 00  tarae  ›  src  ›  demo.rs
-01   1 use std::collections::HashMap;                          ▐  claude                         ready
+01   1 use std::collections::HashMap;                          ▐  claude › follow                ready
 02   1                                                         ▐  ────────────────────────────────────
 03   2 ▎ Counts how often each word appears.                   ▐
 04     ▎                                                       ▐
@@ -63,7 +63,7 @@
 29
 ## fg · visible glyphs only, blank = unlisted color, UPPERCASE = bold
 00  ddddd  f  ddd  f  TTTTTTT
-01   A                                                            TTTTTT                         fffff
+01   A                                                            TTTTTT a aaaaaa                fffff
 02   f                                                            ffffffffffffffffffffffffffffffffffff
 03   f
 04

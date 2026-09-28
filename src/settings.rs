@@ -294,7 +294,7 @@ pub static SETTINGS: &[Setting] = &[
     Setting {
         path: "llm.follow",
         kind: Kind::Bool,
-        doc: "Chat: the editor follows the code Claude is reading, with its thoughts beside it (C-f toggles)",
+        doc: "Chat: the editor follows the code Claude is reading, with its thoughts beside it (C-f toggles per session)",
         get: |c| Value::from(c.llm.follow),
         set: |c, v| c.llm.follow = b(v),
     },

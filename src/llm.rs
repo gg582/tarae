@@ -60,7 +60,7 @@ impl Default for LlmConfig {
             args: DEFAULT_ARGS.iter().map(|s| s.to_string()).collect(),
             model: None,
             context_lines: 20,
-            follow: false,
+            follow: true,
         }
     }
 }

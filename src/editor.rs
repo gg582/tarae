@@ -153,6 +153,8 @@ pub struct Screen {
     pub popup: std::cell::Cell<Option<(usize, usize, usize, usize)>>,
     /// Clickable spots in the chat pane: (row, start col, end col, where it points) — drawing fills them in.
     pub chat_links: std::cell::RefCell<Vec<(usize, usize, usize, crate::chat::Link)>>,
+    /// The minimized chat card (x, y, width, height) — a click on it brings the panel back.
+    pub chat_mini: std::cell::Cell<Option<(usize, usize, usize, usize)>>,
 }
 
 /// One pane of a split: what it shows (a document) + its scroll. Cursor and selection are the document's.
@@ -870,6 +872,23 @@ impl Editor {
                 K::ScrollUp => return self.popup_scroll = self.popup_scroll.saturating_sub(3),
                 _ => {}
             }
+        }
+        // The minimized chat: a trail row jumps there, anywhere else brings the panel back
+        if let (Some((mx, my, mw, mh)), Some(c)) = (s.chat_mini.get(), self.chat.as_mut())
+            && (mx..mx + mw).contains(&x)
+            && (my..my + mh).contains(&y)
+        {
+            if m.kind == K::Down {
+                let links = s.chat_links.borrow();
+                match links.iter().find(|l| l.0 == y && (l.1..l.2).contains(&x)) {
+                    Some((.., link)) => crate::chat::jump(self, link.clone()),
+                    None => {
+                        c.unfolded = true;
+                        c.focused = true;
+                    }
+                }
+            }
+            return;
         }
         if let (Some(cx), Some(c)) = (s.chat_x, self.chat.as_mut())
             && x >= cx
@@ -2368,7 +2387,6 @@ mod tests {
         let result = |id: &str, text: String| json!({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": id, "content": text}]}});
         let mut ed = editor("");
         ed.open(&main).unwrap();
-        ed.config.llm.follow = true;
         fake_claude_stream(
             &mut ed,
             &[
@@ -2411,8 +2429,8 @@ mod tests {
                 json!({"type": "result", "result": "done"}),
             ],
         );
-        feed(&mut ed, "<space>lwhere?<ret><C-f>");
-        assert!(ed.chat.as_ref().unwrap().follow.active(), "C-f turns it on");
+        feed(&mut ed, "<space>lwhere?<ret>");
+        assert!(ed.chat.as_ref().unwrap().follow.active(), "on by default");
         settle_until(&mut ed, |ed| ed.doc().path.as_deref() == Some(util.as_path()));
         feed(&mut ed, "<esc>j");
         settle_until(&mut ed, |ed| !ed.chat.as_ref().unwrap().busy());

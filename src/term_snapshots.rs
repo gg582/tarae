@@ -708,6 +708,31 @@ fn snapshot_chat_explore() {
     s.check("chat_explore");
 }
 
+/// While Claude works in follow mode the panel is minimized to a floating card (the code gets the whole
+/// width); `space l` brings it back for the turn, and without follow it stays docked.
+#[test]
+fn chat_minimizes_while_following() {
+    let mut s = Shot::new(100, 30);
+    s.file("src/demo.rs", DEMO_RS);
+    s.ed.config.llm.command = "sh".into();
+    s.ed.config.llm.args = vec!["-c".into(), "cat > /dev/null".into()];
+    s.keys(" l");
+    s.frame();
+    let docked = s.ed.screen.chat_x;
+    assert!(docked.is_some());
+    s.keys("why?<ret>");
+    assert!(s.ed.chat.as_ref().unwrap().busy());
+    s.frame();
+    assert_eq!(s.ed.screen.chat_x, None, "minimized: no docked panel");
+    assert!(s.ed.screen.chat_mini.get().is_some(), "a floating card instead");
+    s.keys("<esc> l");
+    assert_eq!(s.ed.screen.chat_x, docked, "space l brings the panel back for this turn");
+    s.ed.chat.as_mut().unwrap().unfolded = false;
+    s.ed.chat.as_mut().unwrap().follow.on = false;
+    s.frame();
+    assert_eq!(s.ed.screen.chat_x, docked, "not following = docked");
+}
+
 /// Completion card with the selected item's docs — the list comes from a fake server (`cat`), the
 /// response is injected with `on_lsp_message`.
 #[test]

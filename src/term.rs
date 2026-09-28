@@ -201,6 +201,7 @@ pub fn render(editor: &mut Editor, out: &mut impl Write, w: u16, h: u16) -> io::
         popup: std::cell::Cell::new(None),
         offer_buttons: offer.as_ref().map(|c| c.buttons.clone()).unwrap_or_default(),
         chat_links: Default::default(),
+        chat_mini: Default::default(),
     };
     editor.refresh_search(focus_lay.text_rows);
     // During `/` preview the screen follows the match, not the cursor
@@ -986,6 +987,10 @@ fn chat_width(editor: &Editor, w: usize) -> usize {
     if editor.chat.is_none() {
         return 0;
     }
+    // Following: minimized to a floating card — the code gets the whole width
+    if editor.chat.as_ref().is_some_and(|c| c.compact()) {
+        return 0;
+    }
     let c = (w * 2 / 5).clamp(36, 72);
     if w < c + 40 { w } else { c }
 }
@@ -1263,7 +1268,10 @@ fn draw(
         && lay.edit_w > 0
         && !editor.welcome()
     {
-        draw_thought_card(c, editor, ui, out)?;
+        draw_thought_card(c, editor, ui, lay, out)?;
+    }
+    if let Some(c) = editor.chat.as_ref().filter(|c| c.compact()) {
+        draw_chat_mini(c, editor, ui, lay, out)?;
     }
     if let (Some(lines), Some(at)) = (&editor.popup, text_cursor) {
         draw_popup(lines, at, ui, editor, lay, out)?;
@@ -4321,6 +4329,7 @@ fn draw_thought_card(
     c: &crate::chat::Chat,
     editor: &Editor,
     ui: &Ui,
+    lay: &Layout,
     out: &mut impl Write,
 ) -> io::Result<()> {
     use crate::chat::Role;
@@ -4330,7 +4339,21 @@ fn draw_thought_card(
         return Ok(());
     };
     let title = usize::from(editor.views.len() > 1);
-    let (px, py, pw, ph) = (rect.x, rect.y + title, rect.w, rect.h.saturating_sub(title));
+    let (px, mut py, pw, mut ph) = (rect.x, rect.y + title, rect.w, rect.h.saturating_sub(title));
+    // Stay clear of the minimized chat (both hug the right edge): the room on the far side of it
+    if let Some((mx, my, _, mh)) = c.compact().then(|| chat_mini_rect(c, editor, ui, lay)).flatten()
+        && px + pw > mx
+        && my < py + ph
+        && my + mh > py
+    {
+        if my > py + ph / 2 {
+            ph = my.saturating_sub(py + 1);
+        } else {
+            let below = my + mh + 1;
+            ph = (py + ph).saturating_sub(below);
+            py = below;
+        }
+    }
     let inner = (pw * 2 / 3).clamp(36, 64).min(pw.saturating_sub(6));
     if inner < 20 {
         return Ok(());
@@ -4401,24 +4424,32 @@ fn draw_thought_card(
     {
         first.insert(0, Span { text: "… ".into(), style: faint });
     }
-    let h = 1 + body.len() + 2 * pad;
-    if ph < h + 2 {
+    let full_h = 1 + body.len() + 2 * pad;
+    let min_h = 1 + body.len().min(2) + 2 * pad;
+    if ph < min_h + 2 {
         return Ok(());
     }
-    // Where: under the lines read · above them · bottom of the pane
-    let row_of = |line: usize| rows.iter().position(|r| r.0 == line);
+    // Where: above the first line read (the context before it — shrinks to the room there) · under the
+    // lines read · the bottom of the pane. Rows are counted from the pane's own top, not the room left.
+    let top0 = rect.y + title;
+    let row_y = |line: usize| rows.iter().position(|r| r.0 == line).map(|r| top0 + r);
     let lines =
         gaze.filter(|g| g.path.is_some() && g.path == editor.doc().path).and_then(|g| g.lines.clone());
-    let fits = |y: usize| y >= py && y + h <= py + ph;
-    let bottom = py + ph - h;
-    let y0 = lines
-        .and_then(|l| {
-            let below = rows.iter().rposition(|r| l.contains(&r.0)).map(|r| py + r + 1);
-            // Above ends right on the first line read
-            let above = row_of(l.start).and_then(|r| (py + r).checked_sub(h));
-            below.filter(|&y| fits(y)).or(above.filter(|&y| fits(y)))
-        })
-        .unwrap_or(bottom);
+    let (end, bottom) = (py + ph, py + ph - full_h.min(ph));
+    let mut h = full_h;
+    let mut y0 = bottom;
+    if let Some(l) = lines {
+        let above = row_y(l.start).filter(|&y| y >= py + min_h);
+        let below = rows.iter().rposition(|r| l.contains(&r.0)).map(|r| top0 + r + 1);
+        if let Some(y) = above {
+            h = full_h.min(y - py);
+            y0 = y - h;
+        } else if let Some(y) = below.filter(|&y| y >= py && y + full_h <= end) {
+            y0 = y;
+        }
+    }
+    // Shrunk: keep the newest rows
+    let body = &body[body.len() - (h - 1 - 2 * pad)..];
     let width = inner + 4;
     let x0 = (px + pw).saturating_sub(width + 1);
     card_edge(out, ui, card, x0, y0, width, pad, true)?;
@@ -4572,21 +4603,8 @@ fn draw_chat(
                 if i == 0 || c.msgs[i - 1].role != Role::Tool {
                     lines.push(Vec::new());
                 }
-                let glyph =
-                    if exploring && i + 1 == n { sp("●".into(), accent) } else { sp("◦".into(), faint) };
-                let head = format!(" {:<6} ", look.verb);
-                let range = if look.range.is_empty() { String::new() } else { format!("  {}", look.range) };
-                let room = w.saturating_sub(1 + head.width() + range.width()).max(4);
-                let what =
-                    if look.pattern { fit_ellipsis(&look.what, room) } else { fit_left(&look.what, room) };
-                let mut row = vec![glyph, sp(head, faint), sp(what, if look.pattern { string } else { dim })];
-                if !range.is_empty() {
-                    row.push(sp(
-                        fit(&range, w.saturating_sub(row.iter().map(|s| s.text.width()).sum())),
-                        faint,
-                    ));
-                }
-                lines.push(row);
+                let styles = TrailStyles { faint, dim, string, accent };
+                lines.push(trail_row(look, exploring && i + 1 == n, w, false, &styles));
                 row_links.resize(lines.len(), None);
                 *row_links.last_mut().expect("just pushed") = look.link.clone();
             }
@@ -4818,6 +4836,176 @@ fn chat_markdown(
         }
     }
     out
+}
+
+/// Colors of a trail row.
+struct TrailStyles {
+    faint: Style,
+    dim: Style,
+    string: Style,
+    accent: Style,
+}
+
+/// One lookup as a row: `◦ read  src/lib.rs  L10–49`. `slim` (the minimized chat) drops the verb and keeps
+/// only the file name — patterns stand apart in string color. `live` = the one in progress (`●`).
+fn trail_row(
+    look: &crate::chat::Look,
+    live: bool,
+    w: usize,
+    slim: bool,
+    st: &TrailStyles,
+) -> Vec<crate::markdown::Span> {
+    use crate::markdown::Span;
+    let sp = |text: String, style: Style| Span { text, style };
+    let glyph = if live { sp("●".into(), st.accent) } else { sp("◦".into(), st.faint) };
+    let head = if slim { " ".to_string() } else { format!(" {:<6} ", look.verb) };
+    let name = match std::path::Path::new(&look.what).file_name() {
+        Some(f) if slim && !look.pattern => f.to_string_lossy().into_owned(),
+        _ => look.what.clone(),
+    };
+    let mut range = if look.range.is_empty() { String::new() } else { format!("  {}", look.range) };
+    if slim && w.saturating_sub(1 + head.width() + name.width()) < range.width() {
+        range.clear();
+    }
+    let room = w.saturating_sub(1 + head.width() + range.width()).max(4);
+    let what = if look.pattern { fit_ellipsis(&name, room) } else { fit_left(&name, room) };
+    let mut row = vec![glyph, sp(head, st.faint), sp(what, if look.pattern { st.string } else { st.dim })];
+    if !range.is_empty() {
+        let used: usize = row.iter().map(|s| s.text.width()).sum();
+        row.push(sp(fit(&range, w.saturating_sub(used)), st.faint));
+    }
+    row
+}
+
+/// Where the minimized chat sits: the bottom right of the editing area, like a picture-in-picture (the
+/// right edge of code is mostly empty; the thought card takes the room above the lines being read).
+/// (x, y, width, height) — `None` if the screen is too small.
+fn chat_mini_rect(
+    c: &crate::chat::Chat,
+    editor: &Editor,
+    ui: &Ui,
+    lay: &Layout,
+) -> Option<(usize, usize, usize, usize)> {
+    const INNER: usize = 32;
+    if lay.edit_w < INNER + 30 || lay.text_rows < 12 {
+        return None;
+    }
+    let card = card_style(ui, editor, "ui.popup");
+    let pad = card_padding(ui, card);
+    let turn = c.msgs.iter().rposition(|m| m.role == crate::chat::Role::User).unwrap_or(0);
+    let trail = c.msgs[turn..].iter().filter(|m| m.look.is_some()).count().clamp(1, MINI_TRAIL);
+    // title · question · trail · hint
+    let h = 1 + 1 + trail + 1 + 2 * pad;
+    let width = INNER + 4;
+    Some((
+        lay.edit_w.saturating_sub(width + 1),
+        (lay.text_top as usize + lay.text_rows).saturating_sub(h),
+        width,
+        h,
+    ))
+}
+
+/// Trail rows the minimized chat shows (the newest).
+const MINI_TRAIL: usize = 3;
+
+/// The chat minimized while Claude works in follow mode (bottom right) — the thought card beside the code
+/// carries its words; this keeps the question, where it has been and how to get the panel back.
+///
+/// ```text
+///   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+///     claude › follow              ▂▅▇
+///     ▎ does ask get tools too?
+///     ◦ with_tools  in src
+///     ● llm.rs  L287–302
+///     C-c stop  space l open
+///   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+/// ```
+fn draw_chat_mini(
+    c: &crate::chat::Chat,
+    editor: &Editor,
+    ui: &Ui,
+    lay: &Layout,
+    out: &mut impl Write,
+) -> io::Result<()> {
+    use crate::chat::Role;
+    use crate::markdown::Span;
+    let Some(rect @ (x0, y0, width, _)) = chat_mini_rect(c, editor, ui, lay) else { return Ok(()) };
+    editor.screen.chat_mini.set(Some(rect));
+    let inner = width - 4;
+    let t = &editor.theme;
+    let card = card_style(ui, editor, "ui.popup");
+    let pad = card_padding(ui, card);
+    let dim = Style { fg: ui.virt.fg, ..card };
+    let faint = Style { fg: ui.linenr.fg, ..card };
+    let accent = Style { fg: ui.accent.fg, ..card };
+    let strong = card.patch(t.try_get("ui.text.focus").unwrap_or(Style { bold: true, ..Style::default() }));
+    let string = card.patch(t.try_get("string").unwrap_or(dim));
+    let sp = |text: String, style: Style| Span { text, style };
+    let turn = c.msgs.iter().rposition(|m| m.role == Role::User).unwrap_or(0);
+    let mut rows: Vec<(Vec<Span>, Option<crate::chat::Link>)> = Vec::new();
+    // Title: claude › follow ……… wave
+    let badge = if c.follow.paused { " › paused" } else { " › follow" };
+    let wv = wave(c.started);
+    let gap = inner.saturating_sub(6 + badge.width() + wv.width());
+    rows.push((
+        vec![
+            sp("claude".into(), if c.focused { strong } else { dim }),
+            sp(badge.into(), if c.follow.paused { faint } else { accent }),
+            sp(" ".repeat(gap), card),
+            sp(wv, accent),
+        ],
+        None,
+    ));
+    let question =
+        c.msgs.get(turn).map(|m| m.text.lines().next().unwrap_or_default().to_string()).unwrap_or_default();
+    rows.push((vec![sp("▎ ".into(), accent), sp(fit_ellipsis(&question, inner - 2), strong)], None));
+    let looks: Vec<&crate::chat::Look> = c.msgs[turn..].iter().filter_map(|m| m.look.as_ref()).collect();
+    let styles = TrailStyles { faint, dim, string, accent };
+    let exploring = c.msgs.last().is_some_and(|m| m.role == Role::Tool);
+    if looks.is_empty() {
+        rows.push((vec![sp("◦ thinking…".into(), faint)], None));
+    }
+    let skip = looks.len().saturating_sub(MINI_TRAIL);
+    for (k, look) in looks.iter().enumerate().skip(skip) {
+        let mut row = trail_row(look, exploring && k + 1 == looks.len(), inner, true, &styles);
+        // Earlier lookups folded into a count on the oldest row shown
+        if k == skip && skip > 0 {
+            let more = format!("  +{skip}");
+            let used: usize = row.iter().map(|s| s.text.width()).sum();
+            if used + more.width() <= inner {
+                row.push(sp(more, faint));
+            }
+        }
+        rows.push((row, look.link.clone()));
+    }
+    let key = Style { bold: true, ..dim };
+    let hint: Vec<Span> = if c.focused {
+        vec![
+            sp("C-c".into(), key),
+            sp(" stop  ".into(), faint),
+            sp("C-f".into(), key),
+            sp(" unfollow".into(), faint),
+        ]
+    } else {
+        vec![sp("space l".into(), key), sp(" open the chat".into(), faint)]
+    };
+    rows.push((hint, None));
+    card_edge(out, ui, card, x0, y0, width, pad, true)?;
+    let mut links = editor.screen.chat_links.borrow_mut();
+    let mut y = y0 + pad;
+    for (row, link) in &rows {
+        queue!(out, MoveTo(x0 as u16, y as u16))?;
+        apply(out, card)?;
+        queue!(out, Print("  "))?;
+        let used = chat_spans(out, row, card, inner)?;
+        apply(out, card)?;
+        queue!(out, Print(" ".repeat(inner.saturating_sub(used) + 2)))?;
+        if let Some(l) = link {
+            links.push((y, x0 + 2, x0 + 2 + inner, l.clone()));
+        }
+        y += 1;
+    }
+    card_edge(out, ui, card, x0, y, width, pad, false)
 }
 
 /// A row with nothing but spaces.

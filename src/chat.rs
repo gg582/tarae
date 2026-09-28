@@ -141,6 +141,8 @@ pub struct Chat {
     pub follow: crate::follow::Follow,
     /// This claude doesn't know `--thinking-display` (older CLI) — spawn without it.
     no_thought_flag: bool,
+    /// The user brought the panel back this turn (`space l`, a click on the minimized card).
+    pub unfolded: bool,
 }
 
 impl Chat {
@@ -160,11 +162,18 @@ impl Chat {
             hop: 0,
             follow: Default::default(),
             no_thought_flag: false,
+            unfolded: false,
         }
     }
 
     pub fn busy(&self) -> bool {
         self.state != State::Idle
+    }
+
+    /// Following while Claude works: the thought card beside the code carries its words, so the panel
+    /// is minimized to a floating card (back in full with the answer, or on `space l`).
+    pub fn compact(&self) -> bool {
+        self.follow.on && self.busy() && !self.unfolded
     }
 
     /// Last code block of the last answer.
@@ -222,7 +231,10 @@ impl Drop for Chat {
 /// `space l`: opens if absent (prewarming the process), moves focus to the input if already open.
 pub fn open(ed: &mut Editor) {
     match &mut ed.chat {
-        Some(c) => c.focused = true,
+        Some(c) => {
+            c.focused = true;
+            c.unfolded = true;
+        }
         None => {
             let mut c = Chat::new();
             c.follow.on = ed.config.llm.follow;
@@ -387,6 +399,7 @@ pub fn send(ed: &mut Editor) {
     c.sent.extend(sent);
     c.hop = 0;
     c.follow.new_turn();
+    c.unfolded = false;
     c.msgs.push(Msg::new(Role::User, question, chip));
     c.input.clear();
     c.cursor = 0;
