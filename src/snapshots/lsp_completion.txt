@@ -28,7 +28,7 @@
 25
 26
 27
-28  ▐ INSERT ▌                                                                 ● rust   utf-8 LF   3:7
+28  ▐ INSERT ▌                                                                   rust   utf-8 LF   3:7
 29  tab select   enter accept   C-x complete   esc close
 ## bg · surface per cell, blank = ui.background
 00
@@ -90,7 +90,7 @@
 25
 26
 27
-28  g BBBBBB g                                                                 g dddd   ddddd dd   TTT
+28  g BBBBBB g                                                                   gggg   ddddd dd   TTT
 29  DDD ffffff   DDDDD ffffff   DDD ffffffff   DDD fffff
 ## legend
 bg: c=ui.cursorline.primary  p=ui.popup  P=ui.menu.selected  i=ui.cursor.primary.insert

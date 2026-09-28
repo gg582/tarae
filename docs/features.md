@@ -90,8 +90,8 @@ configs carry over as they are.
   from the tree-sitter tree. With several buffers open, the list shows on the right. Turn it off with
   `editor.header = false`
 - **Status line** — mode pill (`▐ NORMAL ▌`, a color per mode) · git branch and `+3 −2` · Claude status (`…` waiting,
-  `● review` ready) · `● errors ▲ warnings` · language, with its server's state in front — `◦` starting, green `●`
-  connected (a "ready" toast says so too), red `●` failed or exited, faint `◦` none installed · encoding and line
+  `● review` ready) · `● errors ▲ warnings` · language, colored by its server's state — dim italic starting, green
+  connected (a "ready" toast says so too), red failed or exited, faintest when none is installed · encoding and line
   endings · selection count · position. When the terminal is narrow, the least important items fold away first
 - **Log** `:log-open` — what language servers print, when they start, get ready, or exit, what's missing from PATH, and
   every message tarae showed, with local times (`$XDG_STATE_HOME/tarae/tarae.log`, the previous run's kept as `.old`)

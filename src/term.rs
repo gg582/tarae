@@ -3344,19 +3344,19 @@ fn draw_statusline(editor: &Editor, ui: &Ui, lay: &Layout, out: &mut impl Write)
         right.push(gap(100));
     }
     if let Some(s) = &doc.syntax {
-        // Language server at a glance: ◦ starting · ● connected (success color) · ● failed/exited (error color)
+        // The language name says how its server is doing — no extra cells: dim italic starting · success
+        // color connected · error color failed/exited · faintest when none is installed · plain dim otherwise
         use crate::lsp_editor::LspDot;
-        if let Some((dot, _)) = editor.lsp_state() {
-            let ok = editor.theme.try_get("diff.plus").and_then(|s| s.fg).or(ui.accent.fg);
-            let (glyph, fg) = match dot {
-                LspDot::Starting => ("◦ ", ui.virt.fg),
-                LspDot::Ready => ("● ", ok),
-                LspDot::Failed => ("● ", ui.error.fg),
-                LspDot::Missing => ("◦ ", ui.linenr.fg),
-            };
-            right.push(Seg { text: glyph.to_string(), style: Style { fg, ..dim }, keep: 60 });
-        }
-        right.push(Seg { text: s.lang.name.clone(), style: dim, keep: 60 });
+        let style = match editor.lsp_state().map(|s| s.0) {
+            Some(LspDot::Starting) => Style { italic: true, ..dim },
+            Some(LspDot::Ready) => {
+                Style { fg: editor.theme.try_get("diff.plus").and_then(|s| s.fg).or(ui.accent.fg), ..dim }
+            }
+            Some(LspDot::Failed) => Style { fg: ui.error.fg, ..dim },
+            Some(LspDot::Missing) => Style { fg: ui.linenr.fg, ..dim },
+            None => dim,
+        };
+        right.push(Seg { text: s.lang.name.clone(), style, keep: 60 });
         right.push(gap(60));
     }
     let crlf = doc.text.len_lines() > 1 && mv::line_full_end(&doc.text, 0) - mv::line_end(&doc.text, 0) == 2;
